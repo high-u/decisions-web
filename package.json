@@ -1,5 +1,5 @@
 {
-  "name": "decision-web",
+  "name": "decisions-web",
   "private": true,
   "type": "module",
   "dependencies": {

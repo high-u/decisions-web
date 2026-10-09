@@ -1,5 +1,5 @@
 {
-  "name": "decision-web",
+  "name": "decisions-web",
   "compatibility_date": "2026-10-09",
   "assets": {
     "directory": "./dist/"
