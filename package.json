@@ -1,0 +1,24 @@
+{
+  "name": "decision-web",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@alpinejs/focus": "^3.17.4",
+    "alpinejs": "^3.17.4",
+    "heroicons": "^2.2.0",
+    "onnxruntime-web": "^1.22.0"
+  },
+  "scripts": {
+    "copy-ort": "mkdir -p public/ort && cp node_modules/onnxruntime-web/dist/ort.wasm.bundle.min.mjs node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm public/ort/",
+    "predev": "npm run copy-ort",
+    "prebuild": "npm run copy-ort",
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "tailwindcss": "^4.3.3",
+    "vite": "^8.3.1"
+  }
+}
