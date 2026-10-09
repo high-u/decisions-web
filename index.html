@@ -367,8 +367,11 @@
                 <template x-for="sample in samples" :key="sample.name">
                   <tr>
                     <td class="p-4">
-                      <!-- Penguin UI: Default link -->
-                      <a href="#" class="font-medium text-primary underline-offset-2 hover:underline focus:underline focus:outline-hidden dark:text-primary-dark" x-on:click.prevent="openSample(sample)" x-text="sample.name"></a>
+                      <div class="flex items-center gap-2">
+                        <span class="icon" x-html="icons.document"></span>
+                        <!-- Penguin UI: Default link -->
+                        <a href="#" class="font-medium text-primary underline-offset-2 hover:underline focus:underline focus:outline-hidden dark:text-primary-dark" x-on:click.prevent="openSample(sample)" x-text="sample.name"></a>
+                      </div>
                     </td>
                   </tr>
                 </template>

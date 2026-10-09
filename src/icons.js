@@ -12,5 +12,6 @@ import moon from 'heroicons/24/outline/moon.svg?raw';
 import run from 'heroicons/24/outline/play.svg?raw';
 import close from 'heroicons/24/outline/x-mark.svg?raw';
 import menu from 'heroicons/24/outline/bars-3.svg?raw';
+import documentIcon from 'heroicons/24/outline/document.svg?raw';
 
-export const icons = { download, trash, newFile, open, save, saveAs, sample, language, sun, moon, run, close, menu };
+export const icons = { download, trash, newFile, open, save, saveAs, sample, language, sun, moon, run, close, menu, document: documentIcon };
