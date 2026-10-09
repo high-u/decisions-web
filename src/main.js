@@ -3,7 +3,7 @@ import focus from '@alpinejs/focus';
 import './style.css';
 import { i18n } from './i18n.js';
 import { icons } from './icons.js';
-import { model, engine, start, downloadModel, deleteModel } from './model.js';
+import { model, engine, start, downloadModel, deleteModel, canDownload, canDelete } from './model.js';
 import { TYPES, defaultCriteria, newQuestion, emptyForm, fromRequest, toRequest, validate, toFileText } from './scenario.js';
 import { SAMPLES } from '../samples.js';
 import { systemone } from '../systemone.js';
@@ -78,17 +78,32 @@ Alpine.data('app', () => ({
 
   t(key, params) { return this.$store.i18n.t(key, params); },
 
-  get active() { return this.tabs.find(tab => tab.id === this.activeId); },
+  get active() { return this.findTab(this.activeId); },
   get samples() { return SAMPLES[this.$store.i18n.lang] ?? SAMPLES.en; },
+  get language() { return this.$store.i18n.lang; },
+  get modelState() { return this.$store.model; },
 
   // --- tabs ---
 
-  addTab(name, form, handle = null) {
-    const tab = { id: crypto.randomUUID(), name, form, savedText: JSON.stringify(form), errors: {}, run: null };
+  findTab(id) { return this.tabs.find(tab => tab.id === id); },
+
+  // unsaved: the tab starts with unsaved changes, for content the user has not saved anywhere yet
+  addTab(name, form, { handle = null, unsaved = false } = {}) {
+    const tab = { id: crypto.randomUUID(), name, form, savedText: unsaved ? null : JSON.stringify(form), errors: {}, run: null };
     if (handle) handles.set(tab.id, handle);
     this.tabs.push(tab);
-    this.activeId = tab.id;
     this.showSidebar = false;
+    const added = this.findTab(tab.id);
+    this.showTab(added);
+    return added;
+  },
+
+  showTab(tab) { this.activeId = tab.id; },
+
+  // replaces the whole content; errors found on the old rows no longer apply
+  setForm(tab, form) {
+    tab.form = form;
+    tab.errors = {};
   },
 
   isDirty(tab) { return JSON.stringify(tab.form) !== tab.savedText; },
@@ -108,13 +123,15 @@ Alpine.data('app', () => ({
 
   // --- file operations ---
 
-  newTab() {
-    this.addTab(`${this.t('untitled', { n: ++this.untitledCount })}.json`, emptyForm());
+  // without a name, the tab is named "Untitled <n>.json" in the UI language
+  newTab({ name = null, form = emptyForm(), unsaved = false } = {}) {
+    const tabName = name ? withJson(name) : `${this.t('untitled', { n: ++this.untitledCount })}.json`;
+    return this.addTab(tabName, form, { unsaved });
   },
 
   openText(name, text, handle) {
     try {
-      this.addTab(name, fromRequest(JSON.parse(text)), handle);
+      this.addTab(name, fromRequest(JSON.parse(text)), { handle });
     } catch (error) {
       notifyError(this.t('toast.openFailed'), `${name}: ${error.message}`);
     }
@@ -145,7 +162,7 @@ Alpine.data('app', () => ({
 
   openSample(sample) {
     this.samplesOpen = false;
-    this.addTab(withJson(sample.name), fromRequest(sample.request));
+    this.newTab({ name: sample.name, form: fromRequest(sample.request) });
   },
 
   // validation errors stay on the tab, under their rows
@@ -196,6 +213,8 @@ Alpine.data('app', () => ({
 
   downloadModel,
   deleteModel,
+  canDownloadModel() { return canDownload(this.$store.model.status); },
+  canDeleteModel() { return canDelete(this.$store.model.status); },
 
   downloadOpen: false,
 
@@ -244,7 +263,11 @@ Alpine.data('app', () => ({
 
   // --- run ---
 
+  canRun(tab) { return tab.run?.status !== 'running'; },
+
+  // returns tab.run when it ends, or null when the tab is already running
   async runTab(tab) {
+    if (!this.canRun(tab)) return null;
     const request = toRequest(tab.form);
     tab.run = { status: 'running' };
     try {
@@ -262,6 +285,7 @@ Alpine.data('app', () => ({
       tab.run = { status: 'error', error: error.message ?? String(error) };
       notifyError(this.t('toast.runFailed'), tab.run.error);
     }
+    return tab.run;
   },
 
   fmt: x => x.toFixed(4),

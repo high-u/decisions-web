@@ -3,7 +3,7 @@
 //   { state, questions: [{ id, type, instructions, criteria }] }
 //   state: a text, or items [{ key, value }]
 //   criteria: choice [{ key, description }], score [description], noul { true, false }
-// validate() lists what a request cannot hold.
+// checkRequest() lists what of a request the editor cannot hold; validate() lists what of a form a request cannot hold.
 
 export const TYPES = ['choice', 'score', 'noul'];
 
@@ -20,6 +20,76 @@ export const emptyForm = () => ({ state: '', questions: [newQuestion('q1')] });
 const asText = v => typeof v === 'string' ? v : JSON.stringify(v);
 
 const isObject = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+const CHOICE_OPTIONS = { min: 2, max: 20 }; // the Julia-1 encoder takes 2 to 20 options
+const SCORE_LEVELS = { min: 2, max: 10 };
+
+// what keeps a request from being held by the editor as it is: the state is a string or a flat object of strings,
+// instructions and criteria are strings. Returns messages in the style of systemone.js ("questions.<id>: ..."),
+// empty when the request can be held. fromRequest() turns such values into JSON text instead.
+export function checkRequest(request) {
+  if (!isObject(request)) return ['must be an object: {"state": ..., "questions": {...}}'];
+  const errors = [];
+  for (const key of Object.keys(request)) {
+    if (!['state', 'questions', 'model'].includes(key)) errors.push(`${key}: unknown field; a request has "state" and "questions"`);
+  }
+
+  const { state, questions } = request;
+  if (isObject(state)) {
+    for (const [key, value] of Object.entries(state)) {
+      if (key === '') errors.push('state: a field name is empty');
+      else if (typeof value !== 'string') errors.push(`state.${key}: must be a string`);
+    }
+  } else if (typeof state !== 'string') {
+    errors.push('state: must be a string, or a flat object whose values are strings');
+  }
+
+  if (!isObject(questions) || !Object.keys(questions).length) {
+    errors.push('questions: must be an object with at least one question');
+    return errors;
+  }
+  for (const [id, q] of Object.entries(questions)) {
+    const problem = message => errors.push(`questions.${id}: ${message}`);
+    if (id === '') problem('the question id is empty');
+    if (!isObject(q)) {
+      problem('must be an object');
+      continue;
+    }
+    for (const key of Object.keys(q)) {
+      if (!['type', 'instructions', 'criteria'].includes(key)) problem(`unknown field "${key}"`);
+    }
+    if (!TYPES.includes(q.type)) problem('"type" must be one of: choice, score, noul');
+    if (typeof q.instructions !== 'string' || !q.instructions.trim()) problem('"instructions" must be a non-empty string');
+
+    const criteria = q.criteria;
+    if (q.type === 'choice') {
+      const options = isObject(criteria) ? Object.entries(criteria) : [];
+      if (options.length < CHOICE_OPTIONS.min || options.length > CHOICE_OPTIONS.max) {
+        problem(`"criteria" must be an object of ${CHOICE_OPTIONS.min} to ${CHOICE_OPTIONS.max} options`);
+      }
+      for (const [key, description] of options) {
+        if (key === '') problem('an option key is empty');
+        else if (description !== null && typeof description !== 'string') problem(`criteria.${key} must be a string or null`);
+      }
+    } else if (q.type === 'score') {
+      if (!Array.isArray(criteria) || criteria.length < SCORE_LEVELS.min || criteria.length > SCORE_LEVELS.max) {
+        problem(`"criteria" must be an array of ${SCORE_LEVELS.min} to ${SCORE_LEVELS.max} levels`);
+      } else {
+        criteria.forEach((level, i) => { if (typeof level !== 'string') problem(`criteria[${i}] must be a string`); });
+      }
+    } else if (q.type === 'noul' && criteria !== undefined) {
+      if (!isObject(criteria)) {
+        problem('"criteria" must be an object with "true" and "false" descriptions, or be left out');
+      } else {
+        for (const [key, description] of Object.entries(criteria)) {
+          if (key !== 'true' && key !== 'false') problem(`unknown criteria key "${key}"; use "true" and "false"`);
+          else if (typeof description !== 'string') problem(`criteria.${key} must be a string`);
+        }
+      }
+    }
+  }
+  return errors;
+}
 
 // request -> editor form; throws on what the editor cannot show
 export function fromRequest(request) {

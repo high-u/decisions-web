@@ -11,7 +11,7 @@
 - ツールの引数のシナリオは、保存する JSON と同じ形(Jev API のリクエストボディから `model` を除いたもの)にする。
 - ダイアログが絡む操作(開く、保存、名前を付けて保存、タブを閉じる)はツールにしない。
 - ツールの説明、ヘルプ、応答のメッセージは英語で書く。
-- 既存のソースの変更は最低限にする(`src/main.js` に 2 行)。
+- ツールは、画面のボタンと同じアプリの操作を呼び、同じ判定で可否を決める。`src/webmcp.js` はアプリの内部や UI ライブラリに触れない(「WebMCP と親和性の高い作り」)。
 
 ## 前提となる事実
 
@@ -44,16 +44,15 @@
 | 事実 | 場所 |
 | --- | --- |
 | state は「テキスト」(文字列)か「項目」(1 階層の `{ 項目名: 文字列 }`) | `src/scenario.js`、`index.html` |
-| 保存する JSON は `toRequest(form)` の `{ state, questions }` で、`model` は含まない | `src/scenario.js:44`、`src/main.js:84` |
-| 未保存の判定は `JSON.stringify(tab.form) !== tab.savedText`。`addTab()` は作成時に `savedText` を現在の内容にするので、作ったタブは保存済みに見える | `src/main.js:85`、`src/main.js:92` |
-| 新規タブの名前は `t('untitled', { n })` + `.json` で、言語によって変わる(「無題 n.json」 / 「Untitled n.json」) | `src/main.js:110`、`src/i18n.js` |
+| 保存する JSON は `toRequest(form)` の `{ state, questions }` で、`model` は含まない | `src/scenario.js:114`、`src/scenario.js:154` |
+| 未保存の判定は `JSON.stringify(tab.form) !== tab.savedText`。`addTab()` / `newTab()` に `unsaved: true` を渡すと、作成時から未保存になる | `src/main.js:91`、`src/main.js:109`、`src/main.js:127` |
+| 新規タブの名前は `t('untitled', { n })` + `.json` で、言語によって変わる(「無題 n.json」 / 「Untitled n.json」) | `src/main.js:128`、`src/i18n.js` |
 | サンプルは言語ごとに別(`SAMPLES.ja` / `SAMPLES.en`) | `samples.js` |
 | モデルの状態は `checking / none / downloading / downloadFailed / loading / ready / loadFailed` | `src/model.js:9` |
-| ダウンロードボタンは `none` / `downloadFailed` のときだけ押せる | `index.html:344` |
-| 削除ボタンは `checking` / `none` のとき押せない。ダウンロード中の削除はダウンロードを中断する | `index.html:38`、`src/model.js:89` |
-| 実行ボタンは実行中は押せない。モデルが無いと実行時にエラーになる | `index.html:254`、`src/main.js:250` |
-| 言語とモードは `localStorage` に保存される | `src/i18n.js:202`、`src/main.js:217` |
-| JavaScript のオブジェクトは、数字だけのキーを先頭に並べ替える(このアプリはその並びを保存できないとしている) | `src/scenario.js:60-73` |
+| ダウンロードは `none` / `downloadFailed` のときだけ、削除は `checking` / `none` 以外のときだけできる(`canDownload` / `canDelete`)。ボタンも操作もこの判定に従う。ダウンロード中の削除はダウンロードを中断する | `src/model.js:20-21`、`src/model.js:95` |
+| 実行は実行中のタブではできない(`canRun`)。ボタンも `runTab` もこの判定に従う。モデルが無いと実行時にエラーになる | `src/main.js:266-274` |
+| 言語とモードは `localStorage` に保存される | `src/i18n.js:202`、`src/main.js:238` |
+| JavaScript のオブジェクトは、数字だけのキーを先頭に並べ替える(このアプリはその並びを保存できないとしている) | `src/scenario.js:142` |
 
 ## ツール一覧
 
@@ -88,7 +87,7 @@
 - **応答**: 成功は `{ ok: true, ... }`、失敗は `{ ok: false, error }`。`error` には、何が起きたかと次に何をすればよいかを英語で書く。例外はメッセージが失われるので投げない。各 `execute` を包み、想定外の例外も `ok: false` で返す。
 - **検証**: スキーマは型と説明を示す程度にし、`execute` 内で全て確かめる(スキーマ違反は `execute` まで届くため)。
 - **押せない状態**: 画面でボタンが押せない状態でツールが呼ばれたら、何もせず `ok: false` と、理由と現在の状態を返す。
-- **画面との同期**: `create_tab` / `update_tab` / `run_tab` は、そのタブを表示する(`activeId` にする)。
+- **画面との同期**: `create_tab` / `update_tab` / `run_tab` は、そのタブを表示する(`app.showTab`)。
 - **`tabId`**: `update_tab` / `run_tab` では必須。存在しない id のときは、存在する id の一覧を `error` に入れる。
 
 ## 各ツール
@@ -114,7 +113,7 @@ input: {}
 ```
 
 - 応答: `{ ok: true, model: { status, loaded, total, error }, language: "ja" | "en", theme: "light" | "dark" }`。
-- `model` は `Alpine.store('model')`、`language` は `Alpine.store('i18n').lang`、`theme` は `app.dark` から作る。
+- `model` は `app.modelState`、`language` は `app.language`、`theme` は `app.dark` から作る。
 
 ### get_tabs
 
@@ -149,11 +148,9 @@ input: { scenario: Scenario, name?: string }
   name: "Tab name. `.json` is added when missing."
 ```
 
-- 処理:
-  1. `scenario` を検証する。
-  2. `app.addTab(name, fromRequest(scenario))` を呼ぶ。
-  3. 作成したタブの `savedText` を `null` にする。`isDirty()` が常に真になり、利用者が保存するまで未保存になる。
-- `name` があれば、サンプルを開くときと同じく、末尾に `.json` が無ければ足す。無ければ `app.untitledCount` を 1 増やし、`app.t('untitled', { n })` + `.json` にする(画面の「新規」と同じ。言語で変わる)。
+- 処理: `checkRequest(scenario)` で検証し、`app.newTab({ name, form: fromRequest(scenario), unsaved: true })` を呼ぶ。
+  - 未保存にする理由: エージェントが書いた内容は、まだどのファイルにも保存されていないため。
+  - 名前は画面の「新規」と同じ `newTab` が決める。`name` があれば末尾に `.json` が無ければ足し、無ければ「Untitled n.json」(言語で変わる)。
 - 応答: `{ ok: true, tabId, name }`。
 
 ### update_tab
@@ -164,7 +161,7 @@ description: "Replaces the whole scenario of a tab and shows the tab. See get_he
 input: { tabId: string, scenario: Scenario }
 ```
 
-- 処理: 検証の後、`tab.form = fromRequest(scenario)` を行い、`app.activeId = tabId` にする。
+- 処理: `checkRequest(scenario)` で検証し、`app.setForm(tab, fromRequest(scenario))` と `app.showTab(tab)` を呼ぶ。`setForm` は、古い行に対する検証エラー(`tab.errors`)も消す。
 - 応答: `{ ok: true, tabId, unsaved }`。
 
 ### run_tab
@@ -175,12 +172,12 @@ description: "Runs the scenario of a tab, shows the tab, and returns the answers
 input: { tabId: string }
 ```
 
-- 画面の「実行」と同じく、実行中のタブには失敗を返す。
+- 画面の「実行」と同じ `app.canRun(tab)` で判定し、実行中のタブには失敗を返す。
 - モデルが `ready` でなければ、実行せずに失敗を返す。`error` には状態と次の手順を書く。
   - `none` / `downloadFailed`: `download_model`
   - `checking` / `downloading` / `loading`: 待って `get_app_state` で確認する
   - `loadFailed`: 画面の文言どおり、削除してからダウンロードし直す
-- それ以外は `app.activeId = tabId` にし、`await app.runTab(tab)` の後で `tab.run` を読む。
+- それ以外は `app.showTab(tab)` の後、`await app.runTab(tab)` が返す実行結果(`tab.run`)を使う。
   - 成功: `{ ok: true, tabId, ms, model, answers, usage }`
   - 失敗: `{ ok: false, error }`
 - 失敗時は、画面にもトーストが出る(既存の動き)。
@@ -193,7 +190,7 @@ description: "Starts downloading the model (about 610 MB) and returns at once. C
 input: {}
 ```
 
-- `none` / `downloadFailed` 以外では失敗を返す。
+- 画面のボタンと同じ `app.canDownloadModel()` で判定し、できないときは失敗を返す。
 - `app.downloadModel()` を待たずに呼び、`{ ok: true, status: "downloading" }` を返す。
   - 待たない理由: ダウンロードは約 610 MB あり、MCP クライアントがツールの応答をどれだけ待つかは確認していない。
 - ダウンロード用のダイアログは開かない。
@@ -207,7 +204,7 @@ description: "Deletes the downloaded model from the browser. Running scenarios t
 input: {}
 ```
 
-- `checking` / `none` では失敗を返す。それ以外は `await app.deleteModel()` の後、`{ ok: true, status: "none" }` を返す。
+- 画面のボタンと同じ `app.canDeleteModel()` で判定し、できないときは失敗を返す。できるときは `await app.deleteModel()` の後、`{ ok: true, status: "none" }` を返す。
 - ダウンロード中に呼ばれた場合は、画面と同じくダウンロードを中断して削除する。
 
 ### set_language
@@ -234,6 +231,8 @@ input: { theme: "light" | "dark" }
 ## シナリオ(`Scenario`)の検証
 
 `create_tab` と `update_tab` は、次を全て満たすときだけ変更する。満たさないときは何も変えず、違反した全ての場所を `error` に並べる(形式は `systemone.js` に合わせて `questions.<id>: ...`)。
+
+判定は `src/scenario.js` の `checkRequest()` が持つ。「エディタが持てる形」はシナリオの形式の知識なので、`fromRequest` / `toRequest` / `validate` と同じ場所に置く。
 
 | 対象 | 規則 | 根拠 |
 | --- | --- | --- |
@@ -335,18 +334,58 @@ Limits of this app, not of the API:
 6. If an answer looks wrong, make `instructions` and the descriptions more specific. A low `confidence` is a reason to ask the user.
 ```
 
+## WebMCP と親和性の高い作り
+
+### 考え方
+
+画面と WebMCP は、同じアプリを操作する 2 つの入口である。どちらも、アプリが公開した操作と状態だけを使う。
+
+```
+画面(index.html、Alpine)  ─┐
+                            ├─▶ アプリの操作と状態(main.js の app、model.js、scenario.js)
+WebMCP(src/webmcp.js)     ─┘
+```
+
+この形にすると、次のことが成り立つ。
+
+- 画面とツールで、操作の結果も、操作できる条件も同じになる。片方だけを直してずれる、ということが起きない。
+- ツールで変えた状態は、画面が見ている状態そのものなので、すぐ画面に反映される(Chrome best practices の「ツールで変えた状態は画面にすぐ反映する」)。
+- `src/webmcp.js` は UI ライブラリに依存しない。UI ライブラリを変えても、同じ操作と状態を公開すれば、ツールはそのまま動く。
+
+### 決まりごと
+
+1. **操作はアプリのメソッドにする。** 画面のボタンが行うことは、テンプレートに直接書かず(`activeId = tab.id` など)、名前の付いたメソッドにする(`showTab(tab)`)。ツールも同じメソッドを呼ぶ。
+2. **「できるか」の判定は 1 つにする。** ボタンの `:disabled` とツールは、同じ判定(`canRun`、`canDownloadModel`、`canDeleteModel`)を使う。判定は、その状態を持つモジュールに置く(モデルなら `model.js` の `canDownload` / `canDelete`)。
+3. **操作は、自分の判定で自分を守る。** `runTab` / `downloadModel` / `deleteModel` は、できない状態で呼ばれたら何もしない。呼び出し側が判定を忘れても壊れない。
+4. **操作は結果を返す。** 呼び出し側が、操作の後に内部の値を読みにいかなくて済むようにする(`newTab` / `addTab` は作ったタブを、`runTab` は実行結果を返す)。
+5. **形式の知識は形式のモジュールに置く。** シナリオの形の判定(`checkRequest`)、変換(`fromRequest` / `toRequest`)、検証(`validate`)は `scenario.js`。ツールは、それを呼んでエージェント向けの応答にするだけ。
+6. **WebMCP 層は内部に触れない。** `src/webmcp.js` は、アプリの内部の値(`savedText`、`untitledCount`、`activeId` への代入など)や UI ライブラリ(`Alpine.store` など)を直接使わない。必要なものは、アプリが getter やメソッドとして公開する(`modelState`、`language`、`findTab`)。
+7. **エージェント向けの事情は WebMCP 層に置く。** 英語のメッセージ、失敗を値で返すこと、引数の検証、次の手順の案内は `src/webmcp.js` の役目で、アプリの操作には入れない。
+
+### アプリが公開しているもの(`src/webmcp.js` が使うもの)
+
+| 種類 | 名前 |
+| --- | --- |
+| 状態 | `tabs`、`active`、`findTab(id)`、`isDirty(tab)`、`modelState`、`language`、`dark` |
+| 可否 | `canRun(tab)`、`canDownloadModel()`、`canDeleteModel()` |
+| 操作 | `newTab({ name, form, unsaved })`、`setForm(tab, form)`、`showTab(tab)`、`runTab(tab)`、`downloadModel()`、`deleteModel()`、`setLang(lang)`、`setDark(dark)` |
+| 形式(`scenario.js`) | `checkRequest`、`fromRequest`、`toRequest`、`TYPES` |
+
+### 機能を足すとき
+
+- 画面に操作を足すときは、まずアプリのメソッドと、必要なら可否の判定を作り、ボタンはそれを呼ぶ。ツールが要るなら、同じメソッドと判定を使う。
+- ツールのために内部の値を触りたくなったら、それはアプリに足りない操作か状態がある、という合図。アプリ側に公開する。
+- UI ライブラリを変えるときは、上の表の名前を同じ意味で公開すれば、`src/webmcp.js` は変えずに済む。`registerWebMCP(app)` に渡す `app` は、画面が使っているのと同じ、変更が画面に反映される状態であること(Alpine では `init()` の `this`)。
+
 ## ソースの変更
 
 | ファイル | 変更 |
 | --- | --- |
-| `src/webmcp.js`(新規) | `registerWebMCP(app)`。ツールの定義、ヘルプの本文、シナリオの検証。`document.modelContext?.registerTool` が無ければ何もしない |
-| `src/main.js` | `import { registerWebMCP } from './webmcp.js';` と、`init()` の最後に `registerWebMCP(this);` の 2 行 |
-
-- `init()` の `this` は、既存のコードがリアクティブな状態として使っている(`this.newTab()` など)。ツールからの書き換えも、これを通す。
-- 使う既存の関数は次のとおり。
-  - `app`: `addTab`、`isDirty`、`runTab`、`downloadModel`、`deleteModel`、`setLang`、`setDark`、`t`
-  - `scenario.js`: `fromRequest`、`toRequest`
-  - `samples.js`: `SAMPLES`
+| `src/webmcp.js`(新規) | `registerWebMCP(app)`。ツールの定義とヘルプの本文。`document.modelContext?.registerTool` が無ければ何もしない |
+| `src/main.js` | `init()` で `registerWebMCP(this)`。`findTab`、`showTab`、`setForm`、`canRun`、`canDownloadModel`、`canDeleteModel`、`language`、`modelState` を追加。`addTab` に `unsaved` を追加し、作ったタブを返すように。`newTab` に `name` / `form` / `unsaved` を追加し、`openSample` もそれを使うように。`runTab` が判定で自分を守り、結果を返すように |
+| `src/model.js` | `canDownload` / `canDelete` を追加し、`downloadModel` / `deleteModel` がそれで自分を守るように |
+| `src/scenario.js` | `checkRequest` を追加(`src/webmcp.js` から移した) |
+| `index.html` | ダウンロード・削除・実行のボタンの `:disabled` を判定メソッドに、タブの選択を `showTab(tab)` に |
 
 ## 検証の手順
 

@@ -1,16 +1,15 @@
 // WebMCP tools: agents create, update and run scenarios, and control the model, the language and the theme.
+// Tools use only the operations and the state that the app exposes (see "app" in registerWebMCP), as the UI does,
+// so this file does not depend on the UI library. See docs/webmcp.md.
 // A tool never throws: a thrown message does not reach the agent, so failures are returned as { ok: false, error }.
-// Arguments are checked here, since the browser does not enforce inputSchema. See docs/webmcp.md.
-import Alpine from 'alpinejs';
-import { TYPES, fromRequest, toRequest } from './scenario.js';
+// Arguments are checked here, since the browser does not enforce inputSchema.
+import { TYPES, checkRequest, fromRequest, toRequest } from './scenario.js';
 import { SAMPLES } from '../samples.js';
 
 const LANGS = ['ja', 'en'];
 const THEMES = ['light', 'dark'];
 
 const isObject = v => v !== null && typeof v === 'object' && !Array.isArray(v);
-const isText = v => typeof v === 'string';
-const withJson = name => name.toLowerCase().endsWith('.json') ? name : `${name}.json`;
 const fail = error => ({ ok: false, error });
 
 const HELP = {
@@ -93,63 +92,6 @@ const SCENARIO = {
 
 const TAB_ID = { type: 'string', description: 'The tab id from get_tabs.' };
 
-// what this app can hold, as messages in the style of systemone.js ("questions.<id>: ..."); empty when valid
-function checkScenario(scenario) {
-  if (!isObject(scenario)) return ['scenario: must be an object: {"state": ..., "questions": {...}}'];
-  const errors = [];
-  for (const key of Object.keys(scenario)) {
-    if (!['state', 'questions', 'model'].includes(key)) errors.push(`${key}: unknown field; a scenario has "state" and "questions"`);
-  }
-
-  const { state, questions } = scenario;
-  if (isObject(state)) {
-    for (const [key, value] of Object.entries(state)) {
-      if (key === '') errors.push('state: a field name is empty');
-      else if (!isText(value)) errors.push(`state.${key}: must be a string`);
-    }
-  } else if (!isText(state)) {
-    errors.push('state: must be a string, or a flat object whose values are strings');
-  }
-
-  if (!isObject(questions) || !Object.keys(questions).length) {
-    errors.push('questions: must be an object with at least one question');
-    return errors;
-  }
-  for (const [id, q] of Object.entries(questions)) {
-    const problem = message => errors.push(`questions.${id}: ${message}`);
-    if (id === '') problem('the question id is empty');
-    if (!isObject(q)) {
-      problem('must be an object');
-      continue;
-    }
-    for (const key of Object.keys(q)) {
-      if (!['type', 'instructions', 'criteria'].includes(key)) problem(`unknown field "${key}"`);
-    }
-    if (!TYPES.includes(q.type)) problem('"type" must be one of: choice, score, noul');
-    if (!isText(q.instructions) || !q.instructions.trim()) problem('"instructions" must be a non-empty string');
-
-    const criteria = q.criteria;
-    if (q.type === 'choice') {
-      const options = isObject(criteria) ? Object.entries(criteria) : [];
-      if (options.length < 2 || options.length > 20) problem('"criteria" must be an object of 2 to 20 options');
-      for (const [key, description] of options) {
-        if (key === '') problem('an option key is empty');
-        else if (description !== null && !isText(description)) problem(`criteria.${key} must be a string or null`);
-      }
-    } else if (q.type === 'score') {
-      if (!Array.isArray(criteria) || criteria.length < 2 || criteria.length > 10) problem('"criteria" must be an array of 2 to 10 levels');
-      else criteria.forEach((level, i) => { if (!isText(level)) problem(`criteria[${i}] must be a string`); });
-    } else if (q.type === 'noul' && criteria !== undefined) {
-      if (!isObject(criteria)) problem('"criteria" must be an object with "true" and "false" descriptions, or be left out');
-      else for (const [key, description] of Object.entries(criteria)) {
-        if (key !== 'true' && key !== 'false') problem(`unknown criteria key "${key}"; use "true" and "false"`);
-        else if (!isText(description)) problem(`criteria.${key} must be a string`);
-      }
-    }
-  }
-  return errors;
-}
-
 const invalid = errors => fail(`The scenario was not applied. Fix these and call again:\n${errors.join('\n')}`);
 
 function lastRun(run) {
@@ -160,8 +102,6 @@ function lastRun(run) {
 }
 
 function tools(app) {
-  const model = () => Alpine.store('model');
-  const findTab = tabId => app.tabs.find(tab => tab.id === tabId);
   const noTab = tabId =>
     fail(`No tab has the id "${tabId}". Open tabs: ${app.tabs.map(tab => tab.id).join(', ') || 'none'}. Call get_tabs.`);
 
@@ -184,11 +124,11 @@ function tools(app) {
       inputSchema: { type: 'object', properties: {} },
       annotations: { readOnlyHint: true },
       execute: () => {
-        const { status, loaded, total, error } = model();
+        const { status, loaded, total, error } = app.modelState;
         return {
           ok: true,
           model: { status, loaded, total, error: error || null },
-          language: Alpine.store('i18n').lang,
+          language: app.language,
           theme: app.dark ? 'dark' : 'light',
         };
       },
@@ -203,7 +143,7 @@ function tools(app) {
         tabs: app.tabs.map(tab => ({
           id: tab.id,
           name: tab.name,
-          shown: tab.id === app.activeId,
+          shown: tab.id === app.active?.id,
           unsaved: app.isDirty(tab),
           scenario: toRequest(tab.form),
           lastRun: lastRun(tab.run),
@@ -218,7 +158,7 @@ function tools(app) {
         properties: { language: { type: 'string', enum: LANGS, description: '`ja` or `en`. Without it, the current UI language.' } },
       },
       annotations: { readOnlyHint: true },
-      execute: ({ language = Alpine.store('i18n').lang }) => LANGS.includes(language)
+      execute: ({ language = app.language }) => LANGS.includes(language)
         ? { ok: true, language, samples: SAMPLES[language].map(sample => ({ name: sample.name, scenario: sample.request })) }
         : fail(`Unknown language "${language}". Use one of: ${LANGS.join(', ')}.`),
     },
@@ -231,13 +171,11 @@ function tools(app) {
         required: ['scenario'],
       },
       execute: ({ scenario, name }) => {
-        if (name !== undefined && (!isText(name) || !name.trim())) return fail('"name" must be a non-empty string, or be left out.');
-        const errors = checkScenario(scenario);
+        if (name !== undefined && (typeof name !== 'string' || !name.trim())) return fail('"name" must be a non-empty string, or be left out.');
+        const errors = checkRequest(scenario);
         if (errors.length) return invalid(errors);
-        // named as newTab() names a tab
-        app.addTab(name === undefined ? `${app.t('untitled', { n: ++app.untitledCount })}.json` : withJson(name), fromRequest(scenario));
-        const tab = app.active;
-        tab.savedText = null; // unsaved until the user saves it
+        // unsaved until the user saves it: nothing the agent writes is in a file yet
+        const tab = app.newTab({ name, form: fromRequest(scenario), unsaved: true });
         return { ok: true, tabId: tab.id, name: tab.name };
       },
     },
@@ -246,12 +184,12 @@ function tools(app) {
       description: 'Replaces the whole scenario of a tab and shows the tab. See get_help for how to write a scenario.',
       inputSchema: { type: 'object', properties: { tabId: TAB_ID, scenario: SCENARIO }, required: ['tabId', 'scenario'] },
       execute: ({ tabId, scenario }) => {
-        const tab = findTab(tabId);
+        const tab = app.findTab(tabId);
         if (!tab) return noTab(tabId);
-        const errors = checkScenario(scenario);
+        const errors = checkRequest(scenario);
         if (errors.length) return invalid(errors);
-        tab.form = fromRequest(scenario);
-        app.activeId = tab.id;
+        app.setForm(tab, fromRequest(scenario));
+        app.showTab(tab);
         return { ok: true, tabId: tab.id, unsaved: app.isDirty(tab) };
       },
     },
@@ -261,14 +199,14 @@ function tools(app) {
       inputSchema: { type: 'object', properties: { tabId: TAB_ID }, required: ['tabId'] },
       annotations: { untrustedContentHint: true },
       execute: async ({ tabId }) => {
-        const tab = findTab(tabId);
+        const tab = app.findTab(tabId);
         if (!tab) return noTab(tabId);
-        if (tab.run?.status === 'running') return fail('This tab is already running. Call get_tabs to see when it is done.');
-        const { status } = model();
+        if (!app.canRun(tab)) return fail('This tab is already running. Call get_tabs to see when it is done.');
+        const { status } = app.modelState;
         if (status !== 'ready') return fail(`The model is not ready (status "${status}"). ${NOT_READY[status]}`);
-        app.activeId = tab.id;
-        await app.runTab(tab);
-        const run = tab.run;
+        app.showTab(tab);
+        const run = await app.runTab(tab);
+        if (!run) return fail('This tab is already running. Call get_tabs to see when it is done.');
         if (run.status !== 'done') return fail(run.error);
         const { model: name, answers, usage } = run.response;
         return { ok: true, tabId: tab.id, ms: run.ms, model: name, answers, usage };
@@ -279,12 +217,11 @@ function tools(app) {
       description: 'Starts downloading the model (about 610 MB) and returns at once. Check progress with get_app_state; the status becomes `ready` when the model is loaded.',
       inputSchema: { type: 'object', properties: {} },
       execute: () => {
-        const { status } = model();
-        if (!['none', 'downloadFailed'].includes(status)) {
-          return fail(`The model cannot be downloaded now: its status is "${status}". It can be downloaded only when the status is "none" or "downloadFailed".`);
+        if (!app.canDownloadModel()) {
+          return fail(`The model cannot be downloaded now: its status is "${app.modelState.status}". It can be downloaded only when the status is "none" or "downloadFailed".`);
         }
         app.downloadModel(); // not awaited: progress is read with get_app_state
-        return { ok: true, status: model().status };
+        return { ok: true, status: app.modelState.status };
       },
     },
     {
@@ -293,10 +230,9 @@ function tools(app) {
       inputSchema: { type: 'object', properties: {} },
       annotations: { consequentialHint: true },
       execute: async () => {
-        const { status } = model();
-        if (['checking', 'none'].includes(status)) return fail(`There is no model to delete: its status is "${status}".`);
+        if (!app.canDeleteModel()) return fail(`There is no model to delete: its status is "${app.modelState.status}".`);
         await app.deleteModel();
-        return { ok: true, status: model().status };
+        return { ok: true, status: app.modelState.status };
       },
     },
     {
@@ -322,7 +258,9 @@ function tools(app) {
   ];
 }
 
-// app: the reactive data of the "app" component, so that changes made by tools reach the page
+// app: the app as the UI sees it (the reactive data of the "app" component), so that changes made by tools reach the page.
+// Used: tabs, active, findTab, newTab, setForm, showTab, isDirty, canRun, runTab, modelState, canDownloadModel,
+// downloadModel, canDeleteModel, deleteModel, language, setLang, dark, setDark.
 export function registerWebMCP(app) {
   const modelContext = document.modelContext;
   if (typeof modelContext?.registerTool !== 'function') return;

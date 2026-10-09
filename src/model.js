@@ -16,6 +16,10 @@ let loadedEngine = null;
 
 export const engine = () => loadedEngine;
 
+// whether the model can be downloaded or deleted in a status; the buttons and the operations below follow these
+export const canDownload = status => status === 'none' || status === 'downloadFailed';
+export const canDelete = status => status !== 'checking' && status !== 'none';
+
 const set = values => Object.assign(state, values);
 
 async function cachedFiles() {
@@ -58,6 +62,7 @@ export async function start(store) {
 }
 
 export async function downloadModel() {
+  if (!canDownload(state.status)) return;
   const controller = downloading = new AbortController();
   set({ status: 'downloading', loaded: 0, total: 0, error: '' });
   try {
@@ -86,6 +91,7 @@ export async function downloadModel() {
 }
 
 export async function deleteModel() {
+  if (!canDelete(state.status)) return;
   downloading?.abort();
   downloading = null;
   const loaded = await loading?.catch(() => null);

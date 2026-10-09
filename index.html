@@ -35,7 +35,7 @@
           <span class="icon" x-html="icons.download"></span><span x-text="t('download')"></span>
         </button>
         <button type="button" class="flex items-center rounded-radius gap-2 px-2 py-1.5 text-left text-sm font-medium text-on-surface underline-offset-2 hover:bg-primary/5 hover:text-on-surface-strong focus-visible:underline focus:outline-hidden disabled:cursor-not-allowed disabled:opacity-50 dark:text-on-surface-dark dark:hover:bg-primary-dark/5 dark:hover:text-on-surface-dark-strong"
-          x-on:click="deleteModel()" :disabled="['checking', 'none'].includes($store.model.status)">
+          x-on:click="deleteModel()" :disabled="!canDeleteModel()">
           <span class="icon" x-html="icons.trash"></span><span x-text="t('delete')"></span>
         </button>
 
@@ -95,7 +95,7 @@
       <div x-show="tabs.length" x-on:keydown.right.prevent="$focus.wrap().next()" x-on:keydown.left.prevent="$focus.wrap().previous()" class="flex shrink-0 gap-2 overflow-x-auto border-b border-outline dark:border-outline-dark" role="tablist">
         <template x-for="tab in tabs" :key="tab.id">
           <div class="flex items-center" x-bind:class="tab.id === activeId ? 'font-bold text-primary border-b-2 border-primary dark:border-primary-dark dark:text-primary-dark' : 'text-on-surface font-medium dark:text-on-surface-dark dark:hover:border-b-outline-dark-strong dark:hover:text-on-surface-dark-strong hover:border-b-2 hover:border-b-outline-strong hover:text-on-surface-strong'">
-            <button type="button" role="tab" class="h-min whitespace-nowrap px-4 py-2 text-sm" x-on:click="activeId = tab.id" x-bind:aria-selected="tab.id === activeId" x-bind:tabindex="tab.id === activeId ? '0' : '-1'">
+            <button type="button" role="tab" class="h-min whitespace-nowrap px-4 py-2 text-sm" x-on:click="showTab(tab)" x-bind:aria-selected="tab.id === activeId" x-bind:tabindex="tab.id === activeId ? '0' : '-1'">
               <span x-show="isDirty(tab)" :title="t('unsaved')" :aria-label="t('unsaved')">● </span><span x-text="tab.name"></span>
             </button>
             <button type="button" class="icon rounded-radius p-1 hover:opacity-75" :title="t('closeTab')" :aria-label="t('closeTab')" x-on:click="requestClose(tab)" x-html="icons.close"></button>
@@ -251,7 +251,7 @@
               <section class="flex flex-col gap-3">
                 <div class="flex justify-end">
                   <button type="button" class="inline-flex w-full justify-center items-center gap-2 whitespace-nowrap rounded-radius bg-primary border border-primary dark:border-primary-dark px-4 py-2 text-sm font-medium tracking-wide text-on-primary transition hover:opacity-75 text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary active:opacity-100 active:outline-offset-0 disabled:opacity-75 disabled:cursor-not-allowed dark:bg-primary-dark dark:text-on-primary-dark dark:focus-visible:outline-primary-dark"
-                    x-on:click="runTab(tab)" :disabled="tab.run?.status === 'running'">
+                    x-on:click="runTab(tab)" :disabled="!canRun(tab)">
                     <span class="icon" x-html="icons.run"></span><span x-text="t('run')"></span>
                   </button>
                 </div>
@@ -341,7 +341,7 @@
             <span class="icon" x-html="icons.close"></span><span x-text="t('download.close')"></span>
           </button>
           <button type="button" class="inline-flex justify-center items-center gap-2 whitespace-nowrap rounded-radius bg-primary border border-primary dark:border-primary-dark px-4 py-2 text-sm font-medium tracking-wide text-on-primary transition hover:opacity-75 text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary active:opacity-100 active:outline-offset-0 disabled:opacity-75 disabled:cursor-not-allowed dark:bg-primary-dark dark:text-on-primary-dark dark:focus-visible:outline-primary-dark"
-            x-on:click="downloadModel()" :disabled="!['none', 'downloadFailed'].includes($store.model.status)">
+            x-on:click="downloadModel()" :disabled="!canDownloadModel()">
             <span class="icon" x-html="icons.download"></span><span x-text="t('download')"></span>
           </button>
         </div>
