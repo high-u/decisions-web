@@ -64,7 +64,7 @@ export async function downloadModel() {
     const cache = await caches.open(MODEL_CACHE);
     const cached = await cachedFiles();
     const missing = MODEL_FILES.filter((_, i) => !cached[i]);
-    const responses = await Promise.all(missing.map(name => fetch(HF + name, { cache: 'no-store', signal: controller.signal })));
+    const responses = await Promise.all(missing.map(name => fetch(HF + name, { cache: 'no-store', referrerPolicy: 'no-referrer', signal: controller.signal })));
     const failed = responses.find(r => !r.ok);
     if (failed) throw new Error(`HTTP ${failed.status}`);
     let loaded = 0;
