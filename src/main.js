@@ -7,6 +7,7 @@ import { model, engine, start, downloadModel, deleteModel } from './model.js';
 import { TYPES, defaultCriteria, newQuestion, emptyForm, fromRequest, toRequest, validate, toFileText } from './scenario.js';
 import { SAMPLES } from '../samples.js';
 import { systemone } from '../systemone.js';
+import { registerWebMCP } from './webmcp.js';
 
 const THEME_KEY = 'decision-web:theme';
 
@@ -72,6 +73,7 @@ Alpine.data('app', () => ({
     });
     // the page opens as if New was pressed once
     this.newTab();
+    registerWebMCP(this);
   },
 
   t(key, params) { return this.$store.i18n.t(key, params); },
