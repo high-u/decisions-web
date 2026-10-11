@@ -34,6 +34,7 @@ export const messages = {
     untitled: '無題 {n}',
     unsaved: '未保存',
     closeTab: '閉じる',
+    dismiss: '閉じる',
 
     'toast.openFailed': '開けませんでした',
     'toast.saveFailed': '保存できませんでした',
@@ -156,6 +157,7 @@ export const messages = {
     untitled: 'Untitled {n}',
     unsaved: 'Unsaved',
     closeTab: 'Close',
+    dismiss: 'Close',
 
     'toast.openFailed': 'Could not open',
     'toast.saveFailed': 'Could not save',

@@ -10,51 +10,36 @@ import { SAMPLES } from '../samples.js';
 import { systemone } from '../systemone.js';
 import { registerWebMCP } from './webmcp.js';
 import { notifyError, pageReady } from './notify.js';
+import { theme } from './theme.js';
+import { toasts } from './toasts.js';
+import { canWriteFiles, FILE_TYPES, handles, isAbort, writeFile, download, withJson } from './files.js';
 
-const THEME_KEY = 'decision-web:theme';
-
-// Save overwrites the file a tab was opened from or saved to, where the browser can write files.
-// Elsewhere a scenario is opened with a file input and saved as a download.
-const canWriteFiles = 'showOpenFilePicker' in window && 'showSaveFilePicker' in window;
-const FILE_TYPES = [{ description: 'JSON', accept: { 'application/json': ['.json'] } }];
-
-// file handles, kept outside Alpine: its proxies break the methods of browser objects
-const handles = new Map();
-
-const isAbort = error => error?.name === 'AbortError';
-
-// false when the user does not allow writing to the file
-async function writeFile(handle, text) {
-  if (handle.queryPermission && await handle.queryPermission({ mode: 'readwrite' }) !== 'granted'
-    && await handle.requestPermission({ mode: 'readwrite' }) !== 'granted') {
-    return false;
-  }
-  const writable = await handle.createWritable();
-  await writable.write(text);
-  await writable.close();
-  return true;
-}
-
-function download(name, text) {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
-  a.download = name;
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
-
-const withJson = name => name.toLowerCase().endsWith('.json') ? name : `${name}.json`;
+// file handles stay in files.js, outside Alpine
 
 Alpine.plugin(focus);
 Alpine.store('i18n', i18n);
 Alpine.store('model', model);
+Alpine.store('theme', theme);
+Alpine.data('toasts', toasts);
+
+// Constants and pure functions for the templates. They are magics, not data of the component, so that Alpine
+// does not make them reactive.
+Alpine.magic('icons', () => icons);
+Alpine.magic('const', () => ({ TYPES, canWriteFiles }));
+Alpine.magic('fn', () => ({ canAddCriterion, fmt: x => x.toFixed(4) }));
+
+// A stable key for a row (a question, an option, a state item) of a list in the editor, for x-for: the same row
+// keeps its element when rows before it are deleted. Rows are objects of the form, which stay as they are.
+const rowKeys = new WeakMap();
+let rowKeyCount = 0;
+function rowKey(row) {
+  const raw = Alpine.raw(row);
+  if (!rowKeys.has(raw)) rowKeys.set(raw, ++rowKeyCount);
+  return rowKeys.get(raw);
+}
 
 Alpine.data('app', () => ({
-  icons,
-  TYPES,
-  canWriteFiles,
   showSidebar: false,
-  dark: document.documentElement.classList.contains('dark'),
   // tab: { id, name, form, savedText, run: { status, error, response, ms, formText } }
   //   form: the input, with the errors of the last save or run on its rows (see attachErrors)
   //   savedText and run.formText: the input as saved and as run (formText), to tell whether it changed since
@@ -91,6 +76,9 @@ Alpine.data('app', () => ({
   get samples() { return SAMPLES[this.$store.i18n.lang] ?? SAMPLES.en; },
   get language() { return this.$store.i18n.lang; },
   get modelState() { return this.$store.model; },
+  get dark() { return this.$store.theme.dark; },
+
+  rowKey,
 
   // --- tabs ---
 
@@ -287,11 +275,7 @@ Alpine.data('app', () => ({
 
   setLang(lang) { this.$store.i18n.set(lang); },
 
-  setDark(dark) {
-    this.dark = dark;
-    document.documentElement.classList.toggle('dark', dark);
-    try { localStorage.setItem(THEME_KEY, dark ? 'dark' : 'light'); } catch (error) { notifyError(this.t('toast.themeSaveFailed'), error.message); }
-  },
+  setDark(dark) { this.$store.theme.set(dark); },
 
   // --- editor ---
 
@@ -300,8 +284,6 @@ Alpine.data('app', () => ({
 
   // an error with where it is, for a toast
   describeError(e) { return e.at ? `${e.at}: ${errorText(this.language, e)}` : errorText(this.language, e); },
-
-  canAddCriterion,
 
   setStateMode(tab, text) {
     // switching clears the content
@@ -354,8 +336,6 @@ Alpine.data('app', () => ({
     }
     return tab.run;
   },
-
-  fmt: x => x.toFixed(4),
 }));
 
 window.Alpine = Alpine;
