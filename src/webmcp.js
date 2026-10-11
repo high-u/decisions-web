@@ -1,29 +1,30 @@
 // WebMCP tools: agents create, update and run scenarios, and control the model, the language and the theme.
 // Tools use only the operations and the state that the app exposes (see "app" in registerWebMCP), as the UI does,
-// so this file does not depend on the UI library. See docs/webmcp.md.
+// so this file does not depend on the UI library.
 // A tool never throws: a thrown message does not reach the agent, so failures are returned as { ok: false, error }.
 // Arguments are checked here, since the browser does not enforce inputSchema.
-import { TYPES, checkRequest, fromRequest, toRequest } from './scenario.js';
+import { TYPES, APP_MODEL, checkRequest, fromRequest, toRequest, validate } from './scenario.js';
+import { LANGS, translate, errorText } from './messages.js';
+import { notifyError } from './notify.js';
 import { SAMPLES } from '../samples.js';
 
-const LANGS = ['ja', 'en'];
 const THEMES = ['light', 'dark'];
 
 const isObject = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const fail = error => ({ ok: false, error });
 
 const HELP = {
-  overview: `A scenario in this app is the request body of the Jev (System One) API, POST /v1/systemone, without \`model\`:
-{"state": ..., "questions": {"<id>": {"type": "choice" | "score" | "noul", "instructions": "...", "criteria": ...}}}
+  overview: `A scenario in this app is the request body of the Jev (System One) API, POST /v1/systemone:
+{"model": "...", "state": ..., "questions": {"<id>": {"type": "choice" | "score" | "noul", "instructions": "...", "criteria": ...}}}
 The model evaluates the state against every question. Each question is evaluated independently, and its answer comes back under the same <id>.
 - The <id> is not sent to the model. Write the complete question in \`instructions\`.
 - Put the questions about the same state in one scenario. The API evaluates the questions of one request in parallel.
-- To send a scenario to the Jev API, add "model": "jev-latest" (required there).
+- \`model\` is optional here and is not used to run. create_tab sets "${APP_MODEL}" when it is left out; update_tab keeps the tab's \`model\` when it is left out. To send a scenario to the Jev API, set "model": "jev-latest" (required there).
 - This app runs the Julia-1 model in the browser. Its answers have the same shape as the API's, and this app has a few extra limits (topic: app).
 Topics: state, choice, score, noul, app, workflow. get_samples returns complete examples.`,
   state: `\`state\` is the content to evaluate. In this app it is either:
-- a string, or
-- a flat object of named text fields, such as {"message": "...", "refund_policy": "..."}. Every value is a string.
+- a non-empty string, or
+- a flat object of named text fields, such as {"message": "...", "refund_policy": "..."}. Every value is a string, and at least one is not empty.
 Use named fields when the content has several parts (a message, a record, a policy), so that each part has a clear name.
 To ask about one field, name it in \`instructions\` in backticks: "Does \`message\` request a refund?"`,
   choice: `\`choice\` picks one option from a set with no order.
@@ -46,16 +47,17 @@ To ask about one field, name it in \`instructions\` in backticks: "Does \`messag
 - 0.5 does not mean "medium". To measure a degree, use score.
 - State the condition precisely. Avoid vague words such as "strong".`,
   app: `Limits of this app, not of the API:
-- state: a string, or a flat object whose values are strings.
+- state: a non-empty string, or a flat object whose values are strings, at least one not empty. Nested objects and arrays are not accepted.
 - instructions: a non-empty string.
 - choice descriptions: strings or null. score levels and noul criteria: strings.
-- At least one question.
+- At least one question. choice: 2 to 20 options. score: 2 to 10 levels.
 - Question ids, option keys and state field names are not empty.
-- Avoid keys made only of digits: JSON objects move them to the front, so their order is not kept.
+- Keys made only of digits are moved to the front by JSON objects; a scenario whose order would change is not accepted.
+- Input length per question, in tokens: 8192 in all (state, instructions and options), of which 512 for the instructions and the options. A longer input fails when it runs.
 - Running needs the model (about 610 MB). get_app_state shows \`model.status\`; download_model starts the download.
 - Tabs you create or update stay unsaved. The user saves them.`,
   workflow: `1. get_app_state: \`model.status\` must be \`ready\` to run.
-2. get_tabs: see the open tabs and their scenarios.
+2. list_tabs: see the open tabs. get_tab: read the scenario of one tab.
 3. create_tab with a scenario, or update_tab to replace the scenario of a tab. The tab is shown to the user.
 4. If the response has \`ok: false\`, fix the scenario as \`error\` says and call again.
 5. run_tab: read \`answers\`.
@@ -71,12 +73,14 @@ const NOT_READY = {
   downloadFailed: 'The model download failed. Call download_model to try again.',
   loading: 'The model is loading. Call get_app_state until it shows "ready".',
   loadFailed: 'The model could not be loaded. Call delete_model, then download_model.',
+  inOtherTab: 'The model is in use in another tab of this app, so it cannot be used in this tab. Tell the user to close the other tab, then reload this page.',
 };
 
 const SCENARIO = {
   type: 'object',
-  description: 'The Jev API request body without "model": {"state": ..., "questions": {...}}. See get_help.',
+  description: 'The Jev API request body: {"model": ..., "state": ..., "questions": {...}}. `model` is optional. See get_help.',
   properties: {
+    model: { type: 'string' },
     state: { oneOf: [{ type: 'string' }, { type: 'object', additionalProperties: { type: 'string' } }] },
     questions: {
       type: 'object',
@@ -90,25 +94,49 @@ const SCENARIO = {
   required: ['state', 'questions'],
 };
 
-const TAB_ID = { type: 'string', description: 'The tab id from get_tabs.' };
+const TAB_ID = { type: 'string', description: 'The tab id from list_tabs.' };
 
-const invalid = errors => fail(`The scenario was not applied. Fix these and call again:\n${errors.join('\n')}`);
+// errors of scenario.js in English, one per line, each with where it is in the scenario
+const listErrors = errors => errors.map(e => `- ${e.at || '(scenario)'}: ${errorText('en', e)}`).join('\n');
 
-function lastRun(run) {
+// what is wrong with a scenario given to a tool: the checks of an opened file, but nested values are not accepted
+function scenarioErrors(scenario) {
+  if (scenario === undefined) return ['"scenario" is required: the Jev API request body, {"state": ..., "questions": {...}}. See get_help.'];
+  const invalid = checkRequest(scenario, { nested: false });
+  const errors = invalid.length ? invalid : validate(fromRequest(scenario));
+  return errors.length ? [`The scenario was not applied. Fix these and call again:\n${listErrors(errors)}`] : [];
+}
+
+// messages of the Julia-1 encoder when the input is too long, and what to do
+const TOO_LONG = {
+  'State exceeds lossless context budget': 'The state is too long: a question takes 8192 tokens in all (state, instructions and options). Shorten the state, then call update_tab and run_tab again.',
+  'Question/options exceed lossless head budget': 'The instructions and the options of a question are too long: they take 512 tokens at most. Shorten them, then call update_tab and run_tab again.',
+  'Question/options exceed sequence budget': 'The instructions and the options of a question are too long. Shorten them, then call update_tab and run_tab again.',
+};
+
+function lastRun(app, tab) {
+  const { run } = tab;
   if (!run) return null;
-  if (run.status === 'done') return { status: 'done', ms: run.ms, answers: run.response.answers };
-  if (run.status === 'error') return { status: 'error', error: run.error };
-  return { status: run.status };
+  // the result stays shown after the scenario is changed; inputChanged says it no longer matches the scenario
+  const inputChanged = app.runChanged(tab);
+  if (run.status === 'done') return { status: 'done', inputChanged, ms: run.ms, answers: run.response.answers };
+  if (run.status === 'error') return { status: 'error', inputChanged, error: run.error };
+  return { status: run.status, inputChanged };
 }
 
 function tools(app) {
-  const noTab = tabId =>
-    fail(`No tab has the id "${tabId}". Open tabs: ${app.tabs.map(tab => tab.id).join(', ') || 'none'}. Call get_tabs.`);
+  // the tab a tool works on, or the failure to return
+  const findTab = tabId => {
+    if (typeof tabId !== 'string' || !tabId) return { error: fail('"tabId" is required: the id of a tab from list_tabs.') };
+    const tab = app.findTab(tabId);
+    if (!tab) return { error: fail(`No tab has the id "${tabId}". Open tabs: ${app.tabs.map(tab => tab.id).join(', ') || 'none'}. Call list_tabs.`) };
+    return { tab };
+  };
 
   return [
     {
       name: 'get_help',
-      description: 'Explains how to write a scenario for this app. A scenario is the request body of the Jev (System One) API without `model`. Read `overview` and `workflow` before creating or updating a tab.',
+      description: 'Explains how to write a scenario for this app. A scenario is the request body of the Jev (System One) API. Read `overview` and `workflow` before creating or updating a tab.',
       inputSchema: {
         type: 'object',
         properties: { topic: { type: 'string', enum: TOPICS, description: 'Topic to read. Without it, `overview`.' } },
@@ -127,15 +155,15 @@ function tools(app) {
         const { status, loaded, total, error } = app.modelState;
         return {
           ok: true,
-          model: { status, loaded, total, error: error || null },
+          model: { status, loaded, total, error: error ? translate('en', error) : null },
           language: app.language,
           theme: app.dark ? 'dark' : 'light',
         };
       },
     },
     {
-      name: 'get_tabs',
-      description: 'Returns every open tab: id, name, whether it is shown, whether it has unsaved changes, its scenario, and the result of its last run.',
+      name: 'list_tabs',
+      description: 'Lists the open tabs: id, name, whether it is shown, whether it has unsaved changes, whether its input has errors, and the status of its last run. get_tab returns the scenario and the answers of one tab.',
       inputSchema: { type: 'object', properties: {} },
       annotations: { readOnlyHint: true, untrustedContentHint: true },
       execute: () => ({
@@ -145,10 +173,33 @@ function tools(app) {
           name: tab.name,
           shown: tab.id === app.active?.id,
           unsaved: app.isDirty(tab),
-          scenario: toRequest(tab.form),
-          lastRun: lastRun(tab.run),
+          hasErrors: validate(tab.form).length > 0,
+          lastRun: tab.run ? { status: tab.run.status, inputChanged: app.runChanged(tab) } : null,
         })),
       }),
+    },
+    {
+      name: 'get_tab',
+      description: 'Returns one tab: its scenario, the errors of its input if any (then the scenario may not show every row, and the tab cannot be saved or run), and the result of its last run.',
+      inputSchema: { type: 'object', properties: { tabId: TAB_ID }, required: ['tabId'] },
+      annotations: { readOnlyHint: true, untrustedContentHint: true },
+      execute: ({ tabId }) => {
+        const { tab, error: noTab } = findTab(tabId);
+        if (noTab) return noTab;
+        const errors = validate(tab.form);
+        return {
+          ok: true,
+          tab: {
+            id: tab.id,
+            name: tab.name,
+            shown: tab.id === app.active?.id,
+            unsaved: app.isDirty(tab),
+            scenario: toRequest(tab.form),
+            ...(errors.length ? { errors: listErrors(errors) } : {}),
+            lastRun: lastRun(app, tab),
+          },
+        };
+      },
     },
     {
       name: 'get_samples',
@@ -164,7 +215,7 @@ function tools(app) {
     },
     {
       name: 'create_tab',
-      description: 'Opens a new tab with the given scenario and shows it. The tab is left unsaved; the user saves it. Without `name`, the tab is named as the New button names it. See get_help for how to write a scenario.',
+      description: 'Opens a new tab with the given scenario and shows it. The tab is left unsaved; the user saves it. Without `name`, the tab is named as the New button names it. Without `model` in the scenario, it is set to "SupersonicLabs/Julia-1". See get_help for how to write a scenario.',
       inputSchema: {
         type: 'object',
         properties: { scenario: SCENARIO, name: { type: 'string', description: 'Tab name. `.json` is added when missing.' } },
@@ -172,23 +223,23 @@ function tools(app) {
       },
       execute: ({ scenario, name }) => {
         if (name !== undefined && (typeof name !== 'string' || !name.trim())) return fail('"name" must be a non-empty string, or be left out.');
-        const errors = checkRequest(scenario);
-        if (errors.length) return invalid(errors);
+        const [error] = scenarioErrors(scenario);
+        if (error) return fail(error);
         // unsaved until the user saves it: nothing the agent writes is in a file yet
-        const tab = app.newTab({ name, form: fromRequest(scenario), unsaved: true });
+        const tab = app.newTab({ name, form: fromRequest({ model: APP_MODEL, ...scenario }), unsaved: true });
         return { ok: true, tabId: tab.id, name: tab.name };
       },
     },
     {
       name: 'update_tab',
-      description: 'Replaces the whole scenario of a tab and shows the tab. See get_help for how to write a scenario.',
+      description: 'Replaces the whole scenario of a tab and shows the tab. Without `model` in the scenario, the tab keeps its `model`. See get_help for how to write a scenario.',
       inputSchema: { type: 'object', properties: { tabId: TAB_ID, scenario: SCENARIO }, required: ['tabId', 'scenario'] },
       execute: ({ tabId, scenario }) => {
-        const tab = app.findTab(tabId);
-        if (!tab) return noTab(tabId);
-        const errors = checkRequest(scenario);
-        if (errors.length) return invalid(errors);
-        app.setForm(tab, fromRequest(scenario));
+        const { tab, error: noTab } = findTab(tabId);
+        if (noTab) return noTab;
+        const [error] = scenarioErrors(scenario);
+        if (error) return fail(error);
+        app.setForm(tab, fromRequest({ model: tab.form.model, ...scenario }));
         app.showTab(tab);
         return { ok: true, tabId: tab.id, unsaved: app.isDirty(tab) };
       },
@@ -199,15 +250,16 @@ function tools(app) {
       inputSchema: { type: 'object', properties: { tabId: TAB_ID }, required: ['tabId'] },
       annotations: { untrustedContentHint: true },
       execute: async ({ tabId }) => {
-        const tab = app.findTab(tabId);
-        if (!tab) return noTab(tabId);
-        if (!app.canRun(tab)) return fail('This tab is already running. Call get_tabs to see when it is done.');
+        const { tab, error: noTab } = findTab(tabId);
+        if (noTab) return noTab;
+        if (!app.canRun(tab)) return fail('This tab is already running. Call get_tab to see when it is done.');
         const { status } = app.modelState;
         if (status !== 'ready') return fail(`The model is not ready (status "${status}"). ${NOT_READY[status]}`);
         app.showTab(tab);
         const run = await app.runTab(tab);
-        if (!run) return fail('This tab is already running. Call get_tabs to see when it is done.');
-        if (run.status !== 'done') return fail(run.error);
+        if (!run) return fail('This tab is already running. Call get_tab to see when it is done.');
+        if (run.status === 'invalid') return fail(`The tab was not run: its input has errors. Fix them with update_tab, then call run_tab again:\n${listErrors(run.errors)}`);
+        if (run.status !== 'done') return fail(`The run failed: ${run.error}${TOO_LONG[run.error] ? `\n${TOO_LONG[run.error]}` : ''}`);
         const { model: name, answers, usage } = run.response;
         return { ok: true, tabId: tab.id, ms: run.ms, model: name, answers, usage };
       },
@@ -259,7 +311,7 @@ function tools(app) {
 }
 
 // app: the app as the UI sees it (the reactive data of the "app" component), so that changes made by tools reach the page.
-// Used: tabs, active, findTab, newTab, setForm, showTab, isDirty, canRun, runTab, modelState, canDownloadModel,
+// Used: tabs, active, findTab, newTab, setForm, showTab, isDirty, canRun, runTab, runChanged, modelState, canDownloadModel,
 // downloadModel, canDeleteModel, deleteModel, language, setLang, dark, setDark.
 export function registerWebMCP(app) {
   const modelContext = document.modelContext;
@@ -273,6 +325,6 @@ export function registerWebMCP(app) {
       }
     };
     (async () => modelContext.registerTool({ ...tool, execute: safe }))()
-      .catch(error => console.error(`WebMCP: could not register ${tool.name}`, error));
+      .catch(error => notifyError(translate(app.language, 'toast.webmcpFailed'), `${tool.name}: ${error.message}`));
   }
 }

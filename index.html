@@ -4,11 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Decisions Web</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <script>
-    // light or dark before the page is drawn: the user's choice once made, the OS setting until then
+    // light or dark before the page is drawn: the user's choice once made, the OS setting until then.
+    // A choice that cannot be read is told by main.js, from data-theme-read-error.
     (() => {
       let saved = null;
-      try { saved = localStorage.getItem('decision-web:theme'); } catch {}
+      try { saved = localStorage.getItem('decision-web:theme'); } catch (error) { document.documentElement.dataset.themeReadError = error.message; }
       const dark = saved ? saved === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
       document.documentElement.classList.toggle('dark', dark);
     })();
@@ -31,7 +33,7 @@
       <div class="mt-4 flex flex-col gap-2 overflow-y-auto pb-6">
         <div class="px-2 pt-2 text-xs font-semibold text-on-surface/70 dark:text-on-surface-dark/70" x-text="t('model')"></div>
         <button type="button" class="flex items-center rounded-radius gap-2 px-2 py-1.5 text-left text-sm font-medium text-on-surface underline-offset-2 hover:bg-primary/5 hover:text-on-surface-strong focus-visible:underline focus:outline-hidden disabled:cursor-not-allowed disabled:opacity-50 dark:text-on-surface-dark dark:hover:bg-primary-dark/5 dark:hover:text-on-surface-dark-strong"
-          x-on:click="downloadOpen = true">
+          x-on:click="openDownload()">
           <span class="icon" x-html="icons.download"></span><span x-text="t('download')"></span>
         </button>
         <button type="button" class="flex items-center rounded-radius gap-2 px-2 py-1.5 text-left text-sm font-medium text-on-surface underline-offset-2 hover:bg-primary/5 hover:text-on-surface-strong focus-visible:underline focus:outline-hidden disabled:cursor-not-allowed disabled:opacity-50 dark:text-on-surface-dark dark:hover:bg-primary-dark/5 dark:hover:text-on-surface-dark-strong"
@@ -121,7 +123,7 @@
                     <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)_3.375rem] gap-2 items-end">
                       <div class="flex flex-col gap-1">
                         <label class="w-fit pl-0.5 text-sm" x-text="t('id')"></label>
-                        <input type="text" x-model="q.id" x-bind:class="tab.errors[`q.${qi}`] && '!border-danger'" class="w-full rounded-radius border border-outline bg-surface-alt px-2 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-outline-dark dark:bg-surface-dark-alt/50 dark:focus-visible:outline-primary-dark">
+                        <input type="text" x-model="q.id" x-bind:class="error(tab, `q.${qi}`) && '!border-danger'" class="w-full rounded-radius border border-outline bg-surface-alt px-2 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-outline-dark dark:bg-surface-dark-alt/50 dark:focus-visible:outline-primary-dark">
                       </div>
                       <!-- Penguin UI: Default select -->
                       <div class="relative col-span-2 flex flex-col gap-1">
@@ -140,8 +142,9 @@
 
                     <label class="w-fit pl-0.5 text-sm" x-text="t('instructions')"></label>
                     <div class="grid grid-cols-1">
-                      <input type="text" x-model="q.instructions" class="w-full rounded-radius border border-outline bg-surface-alt px-2 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-outline-dark dark:bg-surface-dark-alt/50 dark:focus-visible:outline-primary-dark">
+                      <input type="text" x-model="q.instructions" x-bind:class="error(tab, `q.${qi}.instructions`) && '!border-danger'" class="w-full rounded-radius border border-outline bg-surface-alt px-2 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-outline-dark dark:bg-surface-dark-alt/50 dark:focus-visible:outline-primary-dark">
                     </div>
+                    <small x-show="error(tab, `q.${qi}.instructions`)" class="pl-0.5 text-danger" x-text="error(tab, `q.${qi}.instructions`)"></small>
 
                     <!-- criteria: choice -->
                     <template x-if="q.type === 'choice'">
@@ -150,15 +153,16 @@
                         <template x-for="(row, i) in q.criteria" :key="i">
                           <div class="flex flex-col gap-1">
                             <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)_3.375rem] gap-2 items-center">
-                              <input type="text" x-model="row.key" :placeholder="t('choice.key')" x-bind:class="tab.errors[`q.${qi}.c.${i}`] && '!border-danger'" class="w-full rounded-radius border border-outline bg-surface-alt px-2 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-outline-dark dark:bg-surface-dark-alt/50 dark:focus-visible:outline-primary-dark">
+                              <input type="text" x-model="row.key" :placeholder="t('choice.key')" x-bind:class="error(tab, `q.${qi}.c.${i}`) && '!border-danger'" class="w-full rounded-radius border border-outline bg-surface-alt px-2 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-outline-dark dark:bg-surface-dark-alt/50 dark:focus-visible:outline-primary-dark">
                               <input type="text" x-model="row.description" :placeholder="t('choice.desc')" x-bind:class="i < 2 && 'col-span-2'" class="w-full rounded-radius border border-outline bg-surface-alt px-2 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-outline-dark dark:bg-surface-dark-alt/50 dark:focus-visible:outline-primary-dark">
                               <button type="button" class="icon inline-flex justify-center items-center gap-2 whitespace-nowrap rounded-radius bg-surface-alt border border-surface-alt dark:border-surface-dark-alt px-4 py-2 text-sm font-medium tracking-wide text-on-surface-strong transition hover:opacity-75 text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-surface-alt active:opacity-100 active:outline-offset-0 disabled:opacity-75 disabled:cursor-not-allowed dark:bg-surface-dark-alt dark:text-on-surface-dark-strong dark:focus-visible:outline-surface-dark-alt" x-show="i >= 2" :title="t('remove')" :aria-label="t('remove')" x-on:click="q.criteria.splice(i, 1)" x-html="icons.close"></button>
                             </div>
                             <small x-show="error(tab, `q.${qi}.c.${i}`)" class="pl-0.5 text-danger" x-text="error(tab, `q.${qi}.c.${i}`)"></small>
                           </div>
                         </template>
+                        <small x-show="error(tab, `q.${qi}.criteria`)" class="pl-0.5 text-danger" x-text="error(tab, `q.${qi}.criteria`)"></small>
                         <div class="flex justify-end">
-                          <button type="button" class="inline-flex justify-center items-center gap-2 whitespace-nowrap bg-transparent rounded-radius border border-primary px-4 py-2 text-sm font-medium tracking-wide text-primary transition hover:opacity-75 text-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary active:opacity-100 active:outline-offset-0 disabled:opacity-75 disabled:cursor-not-allowed dark:border-primary-dark dark:text-primary-dark dark:focus-visible:outline-primary-dark" x-on:click="q.criteria.push({ key: '', description: '' })">
+                          <button type="button" class="inline-flex justify-center items-center gap-2 whitespace-nowrap bg-transparent rounded-radius border border-primary px-4 py-2 text-sm font-medium tracking-wide text-primary transition hover:opacity-75 text-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary active:opacity-100 active:outline-offset-0 disabled:opacity-75 disabled:cursor-not-allowed dark:border-primary-dark dark:text-primary-dark dark:focus-visible:outline-primary-dark" x-on:click="q.criteria.push({ key: '', description: '' })" :disabled="!canAddCriterion(q)">
                             <span class="icon" x-html="icons.newFile"></span><span x-text="t('choice.add')"></span>
                           </button>
                         </div>
@@ -175,8 +179,9 @@
                             <button type="button" class="icon inline-flex justify-center items-center gap-2 whitespace-nowrap rounded-radius bg-surface-alt border border-surface-alt dark:border-surface-dark-alt px-4 py-2 text-sm font-medium tracking-wide text-on-surface-strong transition hover:opacity-75 text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-surface-alt active:opacity-100 active:outline-offset-0 disabled:opacity-75 disabled:cursor-not-allowed dark:bg-surface-dark-alt dark:text-on-surface-dark-strong dark:focus-visible:outline-surface-dark-alt" x-show="i >= 2" :title="t('remove')" :aria-label="t('remove')" x-on:click="q.criteria.splice(i, 1)" x-html="icons.close"></button>
                           </div>
                         </template>
+                        <small x-show="error(tab, `q.${qi}.criteria`)" class="pl-0.5 text-danger" x-text="error(tab, `q.${qi}.criteria`)"></small>
                         <div class="flex justify-end">
-                          <button type="button" class="inline-flex justify-center items-center gap-2 whitespace-nowrap bg-transparent rounded-radius border border-primary px-4 py-2 text-sm font-medium tracking-wide text-primary transition hover:opacity-75 text-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary active:opacity-100 active:outline-offset-0 disabled:opacity-75 disabled:cursor-not-allowed dark:border-primary-dark dark:text-primary-dark dark:focus-visible:outline-primary-dark" x-on:click="q.criteria.push('')">
+                          <button type="button" class="inline-flex justify-center items-center gap-2 whitespace-nowrap bg-transparent rounded-radius border border-primary px-4 py-2 text-sm font-medium tracking-wide text-primary transition hover:opacity-75 text-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary active:opacity-100 active:outline-offset-0 disabled:opacity-75 disabled:cursor-not-allowed dark:border-primary-dark dark:text-primary-dark dark:focus-visible:outline-primary-dark" x-on:click="q.criteria.push('')" :disabled="!canAddCriterion(q)">
                             <span class="icon" x-html="icons.newFile"></span><span x-text="t('score.add')"></span>
                           </button>
                         </div>
@@ -197,6 +202,7 @@
                     </template>
                   </div>
                 </template>
+                <small x-show="error(tab, 'questions')" class="pl-0.5 text-danger" x-text="error(tab, 'questions')"></small>
                 <div class="flex justify-end">
                   <button type="button" class="inline-flex justify-center items-center gap-2 whitespace-nowrap bg-transparent rounded-radius border border-primary px-4 py-2 text-sm font-medium tracking-wide text-primary transition hover:opacity-75 text-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary active:opacity-100 active:outline-offset-0 disabled:opacity-75 disabled:cursor-not-allowed dark:border-primary-dark dark:text-primary-dark dark:focus-visible:outline-primary-dark" x-on:click="addQuestion(tab)">
                     <span class="icon" x-html="icons.newFile"></span><span x-text="t('question.add')"></span>
@@ -222,7 +228,7 @@
                   </div>
                   <template x-if="typeof tab.form.state === 'string'">
                     <div class="grid grid-cols-1">
-                      <textarea x-model="tab.form.state" rows="5" class="w-full rounded-radius border border-outline bg-surface-alt px-2.5 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-outline-dark dark:bg-surface-dark-alt/50 dark:focus-visible:outline-primary-dark"></textarea>
+                      <textarea x-model="tab.form.state" rows="5" x-bind:class="error(tab, 'state') && '!border-danger'" class="w-full rounded-radius border border-outline bg-surface-alt px-2.5 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-outline-dark dark:bg-surface-dark-alt/50 dark:focus-visible:outline-primary-dark"></textarea>
                     </div>
                   </template>
                   <template x-if="typeof tab.form.state !== 'string'">
@@ -230,7 +236,7 @@
                       <template x-for="(row, i) in tab.form.state" :key="i">
                         <div class="flex flex-col gap-1">
                           <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)_3.375rem] gap-2 items-start">
-                            <input type="text" x-model="row.key" :placeholder="t('state.key')" x-bind:class="tab.errors[`state.${i}`] && '!border-danger'" class="w-full rounded-radius border border-outline bg-surface-alt px-2 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-outline-dark dark:bg-surface-dark-alt/50 dark:focus-visible:outline-primary-dark">
+                            <input type="text" x-model="row.key" :placeholder="t('state.key')" x-bind:class="error(tab, `state.${i}`) && '!border-danger'" class="w-full rounded-radius border border-outline bg-surface-alt px-2 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-outline-dark dark:bg-surface-dark-alt/50 dark:focus-visible:outline-primary-dark">
                             <textarea x-model="row.value" rows="3" :placeholder="t('state.value')" x-bind:class="i < 1 && 'col-span-2'" class="w-full rounded-radius border border-outline bg-surface-alt px-2.5 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-outline-dark dark:bg-surface-dark-alt/50 dark:focus-visible:outline-primary-dark"></textarea>
                             <button type="button" class="icon inline-flex justify-center items-center gap-2 whitespace-nowrap rounded-radius bg-surface-alt border border-surface-alt dark:border-surface-dark-alt px-4 py-2 text-sm font-medium tracking-wide text-on-surface-strong transition hover:opacity-75 text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-surface-alt active:opacity-100 active:outline-offset-0 disabled:opacity-75 disabled:cursor-not-allowed dark:bg-surface-dark-alt dark:text-on-surface-dark-strong dark:focus-visible:outline-surface-dark-alt" x-show="i >= 1" :title="t('remove')" :aria-label="t('remove')" x-on:click="tab.form.state.splice(i, 1)" x-html="icons.close"></button>
                           </div>
@@ -244,6 +250,7 @@
                       </div>
                     </div>
                   </template>
+                  <small x-show="error(tab, 'state')" class="pl-0.5 text-danger" x-text="error(tab, 'state')"></small>
                 </div>
               </section>
 
@@ -333,6 +340,7 @@
         </div>
         <div class="flex flex-col gap-2 px-8 py-8 text-sm">
           <p x-text="t(['loading', 'ready', 'loadFailed'].includes($store.model.status) ? 'model.downloaded' : 'download.body')"></p>
+          <p x-show="$store.model.newVersion" x-text="t('model.newVersion')"></p>
           <p x-show="modelText()" x-bind:class="$store.model.status.endsWith('Failed') && 'text-danger'" x-text="modelText()"></p>
         </div>
         <div class="flex flex-col-reverse justify-between gap-2 border-t border-outline bg-surface-alt/60 p-4 dark:border-outline-dark dark:bg-surface-dark/20 sm:flex-row sm:items-center md:justify-end">
@@ -415,22 +423,14 @@
       </div>
     </div>
 
-    <!-- Penguin UI: Stacking toast notification (danger only) -->
+    <!-- Penguin UI: Stacking toast notification (danger only).
+         Errors stay until the user closes them, or until closeWhen() becomes true for one that resolves itself. -->
     <div x-data="{
         notifications: [],
-        displayDuration: 8000,
 
-        addNotification({ variant = 'info', sender = null, title = null, message = null}) {
+        addNotification({ variant = 'info', sender = null, title = null, message = null, closeWhen = null }) {
             const id = crypto.randomUUID()
-            const notification = { id, variant, sender, title, message }
-
-            // Keep only the most recent 20 notifications
-            if (this.notifications.length >= 20) {
-                this.notifications.splice(0, this.notifications.length - 19)
-            }
-
-            // Add the new notification to the notifications stack
-            this.notifications.push(notification)
+            this.notifications.push({ id, variant, sender, title, message, closeWhen })
         },
         removeNotification(id) {
             setTimeout(() => {
@@ -444,13 +444,14 @@
             sender: $event.detail.sender,
             title: $event.detail.title,
             message: $event.detail.message,
+            closeWhen: $event.detail.closeWhen,
         })">
 
-      <div x-on:mouseenter="$dispatch('pause-auto-dismiss')" x-on:mouseleave="$dispatch('resume-auto-dismiss')" class="group pointer-events-none fixed inset-x-8 top-0 z-99 flex max-w-full flex-col gap-2 bg-transparent px-6 py-6 md:bottom-0 md:left-[unset] md:right-0 md:top-[unset] md:max-w-sm">
+      <div class="group pointer-events-none fixed inset-x-8 top-0 z-99 flex max-w-full flex-col gap-2 bg-transparent px-6 py-6 md:bottom-0 md:left-[unset] md:right-0 md:top-[unset] md:max-w-sm">
         <template x-for="(notification, index) in notifications" x-bind:key="notification.id">
           <div>
             <template x-if="notification.variant === 'danger'">
-              <div x-data="{ isVisible: false, timeout: null }" x-cloak x-show="isVisible" class="pointer-events-auto relative rounded-radius border border-danger bg-surface text-on-surface dark:bg-surface-dark dark:text-on-surface-dark" role="alert" x-on:pause-auto-dismiss.window="clearTimeout(timeout)" x-on:resume-auto-dismiss.window=" timeout = setTimeout(() => {(isVisible = false), removeNotification(notification.id) }, displayDuration)" x-init="$nextTick(() => { isVisible = true }), (timeout = setTimeout(() => { isVisible = false, removeNotification(notification.id)}, displayDuration))" x-transition:enter="transition duration-300 ease-out" x-transition:enter-end="translate-y-0" x-transition:enter-start="translate-y-8" x-transition:leave="transition duration-300 ease-in" x-transition:leave-end="-translate-x-24 opacity-0 md:translate-x-24" x-transition:leave-start="translate-x-0 opacity-100">
+              <div x-data="{ isVisible: false }" x-cloak x-show="isVisible" class="pointer-events-auto relative rounded-radius border border-danger bg-surface text-on-surface dark:bg-surface-dark dark:text-on-surface-dark" role="alert" x-init="$nextTick(() => { isVisible = true })" x-effect="if (isVisible && notification.closeWhen?.()) { isVisible = false; removeNotification(notification.id) }" x-transition:enter="transition duration-300 ease-out" x-transition:enter-end="translate-y-0" x-transition:enter-start="translate-y-8" x-transition:leave="transition duration-300 ease-in" x-transition:leave-end="-translate-x-24 opacity-0 md:translate-x-24" x-transition:leave-start="translate-x-0 opacity-100">
                 <div class="flex w-full items-center gap-2.5 bg-danger/10 rounded-radius p-4 transition-all duration-300">
 
                   <!-- Icon -->
@@ -463,7 +464,7 @@
                   <!-- Title & Message -->
                   <div class="flex flex-col gap-2">
                     <h3 x-cloak x-show="notification.title" class="text-sm font-semibold text-danger" x-text="notification.title"></h3>
-                    <p x-cloak x-show="notification.message" class="text-pretty text-sm" x-text="notification.message"></p>
+                    <p x-cloak x-show="notification.message" class="text-pretty whitespace-pre-line text-sm" x-text="notification.message"></p>
                   </div>
 
                   <!--Dismiss Button -->
