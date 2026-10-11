@@ -123,7 +123,7 @@
                     <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)_3.375rem] gap-2 items-end">
                       <div class="flex flex-col gap-1">
                         <label class="w-fit pl-0.5 text-sm" x-text="t('id')"></label>
-                        <input type="text" x-model="q.id" x-bind:class="error(tab, `q.${qi}`) && '!border-danger'" class="w-full rounded-radius border border-outline bg-surface-alt px-2 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-outline-dark dark:bg-surface-dark-alt/50 dark:focus-visible:outline-primary-dark">
+                        <input type="text" x-model="q.id" x-bind:class="error(q.errors?.id) && '!border-danger'" class="w-full rounded-radius border border-outline bg-surface-alt px-2 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-outline-dark dark:bg-surface-dark-alt/50 dark:focus-visible:outline-primary-dark">
                       </div>
                       <!-- Penguin UI: Default select -->
                       <div class="relative col-span-2 flex flex-col gap-1">
@@ -138,13 +138,13 @@
                         </select>
                       </div>
                     </div>
-                    <small x-show="error(tab, `q.${qi}`)" class="pl-0.5 text-danger" x-text="error(tab, `q.${qi}`)"></small>
+                    <small x-show="error(q.errors?.id)" class="pl-0.5 text-danger" x-text="error(q.errors?.id)"></small>
 
                     <label class="w-fit pl-0.5 text-sm" x-text="t('instructions')"></label>
                     <div class="grid grid-cols-1">
-                      <input type="text" x-model="q.instructions" x-bind:class="error(tab, `q.${qi}.instructions`) && '!border-danger'" class="w-full rounded-radius border border-outline bg-surface-alt px-2 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-outline-dark dark:bg-surface-dark-alt/50 dark:focus-visible:outline-primary-dark">
+                      <input type="text" x-model="q.instructions" x-bind:class="error(q.errors?.instructions) && '!border-danger'" class="w-full rounded-radius border border-outline bg-surface-alt px-2 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-outline-dark dark:bg-surface-dark-alt/50 dark:focus-visible:outline-primary-dark">
                     </div>
-                    <small x-show="error(tab, `q.${qi}.instructions`)" class="pl-0.5 text-danger" x-text="error(tab, `q.${qi}.instructions`)"></small>
+                    <small x-show="error(q.errors?.instructions)" class="pl-0.5 text-danger" x-text="error(q.errors?.instructions)"></small>
 
                     <!-- criteria: choice -->
                     <template x-if="q.type === 'choice'">
@@ -153,14 +153,14 @@
                         <template x-for="(row, i) in q.criteria" :key="i">
                           <div class="flex flex-col gap-1">
                             <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)_3.375rem] gap-2 items-center">
-                              <input type="text" x-model="row.key" :placeholder="t('choice.key')" x-bind:class="error(tab, `q.${qi}.c.${i}`) && '!border-danger'" class="w-full rounded-radius border border-outline bg-surface-alt px-2 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-outline-dark dark:bg-surface-dark-alt/50 dark:focus-visible:outline-primary-dark">
+                              <input type="text" x-model="row.key" :placeholder="t('choice.key')" x-bind:class="error(row.errors?.key) && '!border-danger'" class="w-full rounded-radius border border-outline bg-surface-alt px-2 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-outline-dark dark:bg-surface-dark-alt/50 dark:focus-visible:outline-primary-dark">
                               <input type="text" x-model="row.description" :placeholder="t('choice.desc')" x-bind:class="i < 2 && 'col-span-2'" class="w-full rounded-radius border border-outline bg-surface-alt px-2 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-outline-dark dark:bg-surface-dark-alt/50 dark:focus-visible:outline-primary-dark">
                               <button type="button" class="icon inline-flex justify-center items-center gap-2 whitespace-nowrap rounded-radius bg-surface-alt border border-surface-alt dark:border-surface-dark-alt px-4 py-2 text-sm font-medium tracking-wide text-on-surface-strong transition hover:opacity-75 text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-surface-alt active:opacity-100 active:outline-offset-0 disabled:opacity-75 disabled:cursor-not-allowed dark:bg-surface-dark-alt dark:text-on-surface-dark-strong dark:focus-visible:outline-surface-dark-alt" x-show="i >= 2" :title="t('remove')" :aria-label="t('remove')" x-on:click="q.criteria.splice(i, 1)" x-html="icons.close"></button>
                             </div>
-                            <small x-show="error(tab, `q.${qi}.c.${i}`)" class="pl-0.5 text-danger" x-text="error(tab, `q.${qi}.c.${i}`)"></small>
+                            <small x-show="error(row.errors?.key)" class="pl-0.5 text-danger" x-text="error(row.errors?.key)"></small>
                           </div>
                         </template>
-                        <small x-show="error(tab, `q.${qi}.criteria`)" class="pl-0.5 text-danger" x-text="error(tab, `q.${qi}.criteria`)"></small>
+                        <small x-show="error(q.errors?.criteria)" class="pl-0.5 text-danger" x-text="error(q.errors?.criteria)"></small>
                         <div class="flex justify-end">
                           <button type="button" class="inline-flex justify-center items-center gap-2 whitespace-nowrap bg-transparent rounded-radius border border-primary px-4 py-2 text-sm font-medium tracking-wide text-primary transition hover:opacity-75 text-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary active:opacity-100 active:outline-offset-0 disabled:opacity-75 disabled:cursor-not-allowed dark:border-primary-dark dark:text-primary-dark dark:focus-visible:outline-primary-dark" x-on:click="q.criteria.push({ key: '', description: '' })" :disabled="!canAddCriterion(q)">
                             <span class="icon" x-html="icons.newFile"></span><span x-text="t('choice.add')"></span>
@@ -179,7 +179,7 @@
                             <button type="button" class="icon inline-flex justify-center items-center gap-2 whitespace-nowrap rounded-radius bg-surface-alt border border-surface-alt dark:border-surface-dark-alt px-4 py-2 text-sm font-medium tracking-wide text-on-surface-strong transition hover:opacity-75 text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-surface-alt active:opacity-100 active:outline-offset-0 disabled:opacity-75 disabled:cursor-not-allowed dark:bg-surface-dark-alt dark:text-on-surface-dark-strong dark:focus-visible:outline-surface-dark-alt" x-show="i >= 2" :title="t('remove')" :aria-label="t('remove')" x-on:click="q.criteria.splice(i, 1)" x-html="icons.close"></button>
                           </div>
                         </template>
-                        <small x-show="error(tab, `q.${qi}.criteria`)" class="pl-0.5 text-danger" x-text="error(tab, `q.${qi}.criteria`)"></small>
+                        <small x-show="error(q.errors?.criteria)" class="pl-0.5 text-danger" x-text="error(q.errors?.criteria)"></small>
                         <div class="flex justify-end">
                           <button type="button" class="inline-flex justify-center items-center gap-2 whitespace-nowrap bg-transparent rounded-radius border border-primary px-4 py-2 text-sm font-medium tracking-wide text-primary transition hover:opacity-75 text-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary active:opacity-100 active:outline-offset-0 disabled:opacity-75 disabled:cursor-not-allowed dark:border-primary-dark dark:text-primary-dark dark:focus-visible:outline-primary-dark" x-on:click="q.criteria.push('')" :disabled="!canAddCriterion(q)">
                             <span class="icon" x-html="icons.newFile"></span><span x-text="t('score.add')"></span>
@@ -202,7 +202,7 @@
                     </template>
                   </div>
                 </template>
-                <small x-show="error(tab, 'questions')" class="pl-0.5 text-danger" x-text="error(tab, 'questions')"></small>
+                <small x-show="error(tab.form.errors?.questions)" class="pl-0.5 text-danger" x-text="error(tab.form.errors?.questions)"></small>
                 <div class="flex justify-end">
                   <button type="button" class="inline-flex justify-center items-center gap-2 whitespace-nowrap bg-transparent rounded-radius border border-primary px-4 py-2 text-sm font-medium tracking-wide text-primary transition hover:opacity-75 text-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary active:opacity-100 active:outline-offset-0 disabled:opacity-75 disabled:cursor-not-allowed dark:border-primary-dark dark:text-primary-dark dark:focus-visible:outline-primary-dark" x-on:click="addQuestion(tab)">
                     <span class="icon" x-html="icons.newFile"></span><span x-text="t('question.add')"></span>
@@ -228,7 +228,7 @@
                   </div>
                   <template x-if="typeof tab.form.state === 'string'">
                     <div class="grid grid-cols-1">
-                      <textarea x-model="tab.form.state" rows="5" x-bind:class="error(tab, 'state') && '!border-danger'" class="w-full rounded-radius border border-outline bg-surface-alt px-2.5 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-outline-dark dark:bg-surface-dark-alt/50 dark:focus-visible:outline-primary-dark"></textarea>
+                      <textarea x-model="tab.form.state" rows="5" x-bind:class="error(tab.form.errors?.state) && '!border-danger'" class="w-full rounded-radius border border-outline bg-surface-alt px-2.5 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-outline-dark dark:bg-surface-dark-alt/50 dark:focus-visible:outline-primary-dark"></textarea>
                     </div>
                   </template>
                   <template x-if="typeof tab.form.state !== 'string'">
@@ -236,11 +236,11 @@
                       <template x-for="(row, i) in tab.form.state" :key="i">
                         <div class="flex flex-col gap-1">
                           <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)_3.375rem] gap-2 items-start">
-                            <input type="text" x-model="row.key" :placeholder="t('state.key')" x-bind:class="error(tab, `state.${i}`) && '!border-danger'" class="w-full rounded-radius border border-outline bg-surface-alt px-2 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-outline-dark dark:bg-surface-dark-alt/50 dark:focus-visible:outline-primary-dark">
+                            <input type="text" x-model="row.key" :placeholder="t('state.key')" x-bind:class="error(row.errors?.key) && '!border-danger'" class="w-full rounded-radius border border-outline bg-surface-alt px-2 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-outline-dark dark:bg-surface-dark-alt/50 dark:focus-visible:outline-primary-dark">
                             <textarea x-model="row.value" rows="3" :placeholder="t('state.value')" x-bind:class="i < 1 && 'col-span-2'" class="w-full rounded-radius border border-outline bg-surface-alt px-2.5 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-outline-dark dark:bg-surface-dark-alt/50 dark:focus-visible:outline-primary-dark"></textarea>
                             <button type="button" class="icon inline-flex justify-center items-center gap-2 whitespace-nowrap rounded-radius bg-surface-alt border border-surface-alt dark:border-surface-dark-alt px-4 py-2 text-sm font-medium tracking-wide text-on-surface-strong transition hover:opacity-75 text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-surface-alt active:opacity-100 active:outline-offset-0 disabled:opacity-75 disabled:cursor-not-allowed dark:bg-surface-dark-alt dark:text-on-surface-dark-strong dark:focus-visible:outline-surface-dark-alt" x-show="i >= 1" :title="t('remove')" :aria-label="t('remove')" x-on:click="tab.form.state.splice(i, 1)" x-html="icons.close"></button>
                           </div>
-                          <small x-show="error(tab, `state.${i}`)" class="pl-0.5 text-danger" x-text="error(tab, `state.${i}`)"></small>
+                          <small x-show="error(row.errors?.key)" class="pl-0.5 text-danger" x-text="error(row.errors?.key)"></small>
                         </div>
                       </template>
                       <div class="flex justify-end">
@@ -250,7 +250,7 @@
                       </div>
                     </div>
                   </template>
-                  <small x-show="error(tab, 'state')" class="pl-0.5 text-danger" x-text="error(tab, 'state')"></small>
+                  <small x-show="error(tab.form.errors?.state)" class="pl-0.5 text-danger" x-text="error(tab.form.errors?.state)"></small>
                 </div>
               </section>
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { APP_MODEL, checkRequest, fromRequest, toRequest, validate, errorKey, reportedErrors } from './scenario.js';
+import { APP_MODEL, checkRequest, fromRequest, toRequest, validate, attachErrors, hasErrors, formText } from './scenario.js';
 import { LANGS, translate, errorText } from './messages.js';
 import { SAMPLES } from '../samples.js';
 
@@ -40,6 +40,7 @@ test('nested values become JSON text in an opened file, and are rejected from a 
   assert.equal(form.state[0].value, '{"id":7}');
   assert.equal(form.questions[0].instructions, '["a","b"]');
   assert.deepEqual(form.questions[0].criteria, [{ key: 'k', description: '{"x":1}' }, { key: 'n', description: '' }]);
+  assert.equal(toRequest(form).questions.q.criteria.n, '');
 
   const errors = checkRequest(request, { nested: false });
   assert.deepEqual(errors.map(e => [e.at, e.code]), [
@@ -99,6 +100,10 @@ test('a form that cannot be saved or run is rejected under the row that is wrong
   ];
   assert.deepEqual(validate(valid()), []);
   // the limits themselves are allowed
+  // keys of digits from 2^32 - 1 up are not moved by JavaScript objects: only "1" is
+  const big = valid();
+  big.questions[0].criteria = ['a', '4294967295', '1'].map(key => ({ key, description: '' }));
+  assert.deepEqual(validate(big).map(e => [e.path, e.code]), [['q.0.c.2', 'err.numeric']]);
   const limits = valid();
   limits.questions[0].criteria = options(20);
   limits.questions[1].criteria = Array(10).fill('x');
@@ -113,13 +118,34 @@ test('a form that cannot be saved or run is rejected under the row that is wrong
   }
 });
 
-test('a reported error is shown until it is fixed, and a new error waits for the next check', () => {
-  const form = { model: null, state: 's', questions: [{ id: 'q', type: 'noul', instructions: '', criteria: { true: '', false: '' } }] };
-  const reported = validate(form).map(errorKey);
-  assert.deepEqual(reportedErrors(form, reported).map(e => e.path), ['q.0.instructions']);
+test('errors found at a save or run stay on their rows until the next one, and go away with their row', () => {
+  const form = {
+    model: null, state: '',
+    questions: [{ id: 'q', type: 'choice', instructions: '', criteria: [{ key: '', description: '' }, { key: 'b', description: '' }] }],
+  };
+  const text = formText(form);
+  attachErrors(form, validate(form));
+  assert.equal(form.errors.state.code, 'err.noState');
+  assert.equal(form.questions[0].errors.instructions.code, 'err.noInstructions');
+  assert.equal(form.questions[0].criteria[0].errors.key.code, 'err.empty');
+  assert.deepEqual(form.questions[0].criteria[1].errors, {});
+  // the errors are not part of the input
+  assert.equal(formText(form), text);
 
-  form.questions[0].instructions = 'Is it?';
-  form.state = '';
-  assert.deepEqual(reportedErrors(form, reported), []);
-  assert.deepEqual(validate(form).map(e => e.path), ['state']);
+  // typing does not change them
+  form.questions[0].instructions = 'Which?';
+  form.questions[0].criteria[1].key = '';
+  assert.equal(form.questions[0].errors.instructions.code, 'err.noInstructions');
+  assert.deepEqual(form.questions[0].criteria[1].errors, {});
+
+  // deleting a row deletes its errors only
+  form.questions[0].criteria.splice(0, 1);
+  assert.deepEqual(form.questions[0].criteria[0].errors, {});
+  assert.equal(hasErrors(form), true);
+
+  // the next check replaces them
+  form.state = 's';
+  form.questions[0].criteria = [{ key: 'a', description: '' }, { key: 'b', description: '' }];
+  attachErrors(form, validate(form));
+  assert.equal(hasErrors(form), false);
 });

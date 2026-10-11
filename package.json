@@ -12,7 +12,7 @@
     "copy-ort": "mkdir -p public/ort && cp node_modules/onnxruntime-web/dist/ort.wasm.bundle.min.mjs node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm public/ort/",
     "predev": "npm run copy-ort",
     "prebuild": "npm run copy-ort",
-    "dev": "vite --host 127.0.0.1",
+    "dev": "vite --host localhost",
     "build": "vite build",
     "test": "node --test",
     "preview": "vite preview --host 127.0.0.1"

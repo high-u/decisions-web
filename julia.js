@@ -10,7 +10,13 @@ function displayProbabilities(values) {
 export class JuliaCPU {
   static async load(baseUrl, { encoder, ...options }) {
     const engine = await this.create({ modelUrl: new URL('model.onnx', baseUrl).href, encoder, ...options });
-    await engine.warm();
+    try {
+      await engine.warm();
+    } catch (error) {
+      // the session is released when the model cannot run
+      await engine.session.release();
+      throw error;
+    }
     return engine;
   }
 

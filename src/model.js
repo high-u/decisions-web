@@ -21,14 +21,16 @@ const COMMIT_KEY = `${HF}commit`;
 const MAX_LENGTH = 8192;
 const HEAD_LENGTH = 512;
 
-// status: checking | inOtherTab | none | downloading | downloadFailed | loading | ready | loadFailed
+// status: checking | inOtherTab | lockFailed | none | downloading | downloadFailed | loading | ready | loadFailed
 // loaded and total: bytes of the download in progress, 0 in other statuses.
-// error: why the last step failed (with none: why the downloaded model could not be checked): a key of messages.js for the reasons of this app, or the message of the error.
-// newVersion: whether the repository has a newer commit than the downloaded model (see checkNewVersion).
+// error: the message of the error that made the last step fail (with none: why the downloaded model could not be
+// checked; with lockFailed: why this tab could not take the model).
 // The whole state on entering a status: what the previous status had is not carried over.
-export const stateOf = (status, values = {}) => ({ loaded: 0, total: 0, error: '', newVersion: false, ...values, status });
+export const stateOf = (status, values = {}) => ({ loaded: 0, total: 0, error: '', ...values, status });
 
-export const model = stateOf('checking');
+// newVersion: whether the repository has a newer commit than the downloaded model (see checkNewVersion).
+// It belongs to the downloaded files, not to a status: loading or running them does not change it.
+export const model = { ...stateOf('checking'), newVersion: false };
 
 let state = model; // the Alpine store once start() is called, so that changes reach the page
 
@@ -41,7 +43,7 @@ export const engine = () => loadedEngine;
 
 // whether the model can be downloaded or deleted in a status; the buttons and the operations below follow these
 export const canDownload = status => status === 'none' || status === 'downloadFailed';
-export const canDelete = status => !['checking', 'inOtherTab', 'none'].includes(status);
+export const canDelete = status => !['checking', 'inOtherTab', 'lockFailed', 'none'].includes(status);
 
 // every change of status goes through here
 const to = (status, values) => Object.assign(state, stateOf(status, values));
@@ -55,13 +57,16 @@ export const cacheStatus = files => files.every(Boolean) ? 'complete' : files.so
 // whether the repository has a newer commit; not known (false) for a model whose commit was not kept
 export const isNewVersion = (downloaded, latest) => !!downloaded && downloaded !== latest;
 
-async function cachedFiles() {
-  const cache = await caches.open(MODEL_CACHE);
-  return Promise.all(MODEL_FILES.map(name => cache.match(fileKey(name))));
-}
+// a Git commit id as the Hugging Face API returns it
+export const isCommit = sha => typeof sha === 'string' && /^[0-9a-f]{40}$/.test(sha);
+
+// reads go through caches.match with the cache name: unlike caches.open, it does not create the cache when there is none
+const cached = key => caches.match(key, { cacheName: MODEL_CACHE });
+
+const cachedFiles = () => Promise.all(MODEL_FILES.map(name => cached(fileKey(name))));
 
 async function modelFile(name) {
-  const response = await (await caches.open(MODEL_CACHE)).match(fileKey(name));
+  const response = await cached(fileKey(name));
   return new Uint8Array(await response.arrayBuffer());
 }
 
@@ -69,12 +74,14 @@ async function modelFile(name) {
 async function latestCommit(signal) {
   const response = await fetch(`https://huggingface.co/api/models/${REPO}/revision/main`, { cache: 'no-store', referrerPolicy: 'no-referrer', signal });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return (await response.json()).sha;
+  const { sha } = await response.json();
+  if (!isCommit(sha)) throw new Error(`The model repository did not return a commit (sha: ${JSON.stringify(sha)})`);
+  return sha;
 }
 
 // the commit the downloaded model came from, or null when it is not known
 async function downloadedCommit() {
-  const response = await (await caches.open(MODEL_CACHE)).match(COMMIT_KEY);
+  const response = await cached(COMMIT_KEY);
   return response ? response.text() : null;
 }
 
@@ -112,12 +119,19 @@ function takeModel() {
 
 export async function start(store) {
   state = store;
+  let owner;
+  try {
+    owner = await takeModel();
+  } catch (error) {
+    to('lockFailed', { error: messageOf(error) });
+    return;
+  }
+  if (!owner) {
+    to('inOtherTab');
+    return;
+  }
   let ready;
   try {
-    if (!await takeModel()) {
-      to('inOtherTab');
-      return;
-    }
     // files left by a download that did not finish (the tab was closed) are removed
     const status = cacheStatus(await cachedFiles());
     if (status === 'partial') await caches.delete(MODEL_CACHE);
@@ -137,6 +151,7 @@ export async function downloadModel() {
   // progress of this download only: a deleted or replaced download no longer changes the store
   const progress = values => { if (downloading === controller) Object.assign(state, values); };
   to('downloading');
+  state.newVersion = false;
   try {
     const commit = await latestCommit(controller.signal);
     await caches.delete(MODEL_CACHE);
@@ -158,11 +173,19 @@ export async function downloadModel() {
     downloading = null;
     load();
   } catch (error) {
+    // the other files of this download stop too
+    controller.abort();
     // deleted meanwhile: deleteModel() removes the files
     if (downloading !== controller) return;
+    let message = messageOf(error);
+    try {
+      await caches.delete(MODEL_CACHE);
+    } catch (cleanupError) {
+      message += ` (the downloaded files could not be removed: ${messageOf(cleanupError)})`;
+    }
+    if (downloading !== controller) return;
     downloading = null;
-    await caches.delete(MODEL_CACHE);
-    to('downloadFailed', { error: messageOf(error) });
+    to('downloadFailed', { error: message });
   }
 }
 
@@ -176,15 +199,16 @@ export async function deleteModel() {
   await loaded?.session.release();
   await caches.delete(MODEL_CACHE);
   to('none');
+  state.newVersion = false;
 }
 
 // sets newVersion when the repository has a newer commit than the downloaded model.
 // Not known for a model downloaded by the first versions of this app, which did not keep the commit.
 export async function checkNewVersion() {
-  const status = state.status;
-  if (!['loading', 'ready', 'loadFailed'].includes(status)) return;
+  if (!['loading', 'ready', 'loadFailed'].includes(state.status)) return;
   const commit = await downloadedCommit();
   if (!commit) return;
   const latest = await latestCommit();
-  if (state.status === status) Object.assign(state, { newVersion: isNewVersion(commit, latest) });
+  // the result holds only for the files it was checked for
+  if (await downloadedCommit() === commit) state.newVersion = isNewVersion(commit, latest);
 }

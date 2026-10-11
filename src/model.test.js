@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { canDownload, canDelete, stateOf, messageOf, cacheStatus, isNewVersion } from './model.js';
+import { canDownload, canDelete, stateOf, messageOf, cacheStatus, isNewVersion, isCommit } from './model.js';
 
 test('the model can be downloaded and deleted only in these statuses', () => {
   const allowed = {
     checking: [false, false],
     inOtherTab: [false, false],
+    lockFailed: [false, false],
     none: [true, false],
     downloading: [false, true],
     downloadFailed: [true, true],
@@ -18,9 +19,9 @@ test('the model can be downloaded and deleted only in these statuses', () => {
   }
 });
 
-test('entering a status does not carry over the progress, the error or the version notice of the previous one', () => {
-  assert.deepEqual(stateOf('none'), { status: 'none', loaded: 0, total: 0, error: '', newVersion: false });
-  assert.deepEqual(stateOf('downloadFailed', { error: 'HTTP 404' }), { status: 'downloadFailed', loaded: 0, total: 0, error: 'HTTP 404', newVersion: false });
+test('entering a status does not carry over the progress or the error of the previous one', () => {
+  assert.deepEqual(stateOf('none'), { status: 'none', loaded: 0, total: 0, error: '' });
+  assert.deepEqual(stateOf('downloadFailed', { error: 'HTTP 404' }), { status: 'downloadFailed', loaded: 0, total: 0, error: 'HTTP 404' });
 });
 
 test('an error thrown as a string keeps its text', () => {
@@ -39,4 +40,10 @@ test('a newer version is told only when the commit of the downloaded model is kn
   assert.equal(isNewVersion('a1', 'b2'), true);
   assert.equal(isNewVersion('a1', 'a1'), false);
   assert.equal(isNewVersion(null, 'b2'), false);
+});
+
+test('only a commit id is taken as the latest commit', () => {
+  assert.equal(isCommit('82a2fadf8fccfccdc5fd4e1009ba8f1a265eb7a8'), true);
+  assert.equal(isCommit(undefined), false);
+  assert.equal(isCommit('main'), false);
 });

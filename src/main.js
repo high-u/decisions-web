@@ -4,8 +4,8 @@ import './style.css';
 import { i18n } from './i18n.js';
 import { errorText } from './messages.js';
 import { icons } from './icons.js';
-import { model, engine, start, downloadModel, deleteModel, checkNewVersion, canDownload, canDelete } from './model.js';
-import { TYPES, APP_MODEL, defaultCriteria, newQuestion, emptyForm, canAddCriterion, checkRequest, fromRequest, toRequest, validate, errorKey, reportedErrors, toFileText } from './scenario.js';
+import { model, engine, start, downloadModel, deleteModel, checkNewVersion, canDownload, canDelete, messageOf } from './model.js';
+import { TYPES, APP_MODEL, defaultCriteria, newQuestion, emptyForm, canAddCriterion, checkRequest, fromRequest, toRequest, validate, attachErrors, hasErrors, formText, toFileText } from './scenario.js';
 import { SAMPLES } from '../samples.js';
 import { systemone } from '../systemone.js';
 import { registerWebMCP } from './webmcp.js';
@@ -43,7 +43,6 @@ function download(name, text) {
   URL.revokeObjectURL(a.href);
 }
 
-
 const withJson = name => name.toLowerCase().endsWith('.json') ? name : `${name}.json`;
 
 Alpine.plugin(focus);
@@ -56,9 +55,9 @@ Alpine.data('app', () => ({
   canWriteFiles,
   showSidebar: false,
   dark: document.documentElement.classList.contains('dark'),
-  // tab: { id, name, form, savedText, reported, run: { status, error, response, ms, formText } }
-  //   reported: the errors found when the user last saved or ran the tab, as errorKey()
-  //   run.formText: the form the run was made with, to tell whether the input changed since
+  // tab: { id, name, form, savedText, run: { status, error, response, ms, formText } }
+  //   form: the input, with the errors of the last save or run on its rows (see attachErrors)
+  //   savedText and run.formText: the input as saved and as run (formText), to tell whether it changed since
   tabs: [],
   activeId: null,
   untitledCount: 0,
@@ -71,10 +70,12 @@ Alpine.data('app', () => ({
       if (this.tabs.some(tab => this.isDirty(tab))) e.preventDefault();
     });
     this.$watch('$store.model.status', status => {
-      if (status === 'downloadFailed') notifyError(this.t('toast.downloadFailed'), this.t(this.$store.model.error));
-      if (status === 'loadFailed') notifyError(this.t('toast.loadFailed'), this.t(this.$store.model.error));
+      const { error } = this.$store.model;
+      if (status === 'downloadFailed') notifyError(this.t('toast.downloadFailed'), error);
+      if (status === 'loadFailed') notifyError(this.t('toast.loadFailed'), error);
+      if (status === 'lockFailed') notifyError(this.t('toast.lockFailed'), error);
       // a model that could not be checked is taken as not downloaded; downloading again starts over
-      if (status === 'none' && this.$store.model.error) notifyError(this.t('toast.checkFailed'), this.t(this.$store.model.error));
+      if (status === 'none' && error) notifyError(this.t('toast.checkFailed'), error);
     });
     // the theme is the OS setting meanwhile (see the script at the top of index.html)
     const themeReadError = document.documentElement.dataset.themeReadError;
@@ -97,7 +98,7 @@ Alpine.data('app', () => ({
 
   // unsaved: the tab starts with unsaved changes, for content the user has not saved anywhere yet
   addTab(name, form, { handle = null, unsaved = false } = {}) {
-    const tab = { id: crypto.randomUUID(), name, form, savedText: unsaved ? null : JSON.stringify(form), reported: [], run: null };
+    const tab = { id: crypto.randomUUID(), name, form, savedText: unsaved ? null : formText(form), run: null };
     if (handle) handles.set(tab.id, handle);
     this.tabs.push(tab);
     this.showSidebar = false;
@@ -108,13 +109,12 @@ Alpine.data('app', () => ({
 
   showTab(tab) { this.activeId = tab.id; },
 
-  // replaces the whole content; errors found on the old rows no longer apply
+  // replaces the whole content, and with it the errors on the old rows
   setForm(tab, form) {
     tab.form = form;
-    tab.reported = [];
   },
 
-  isDirty(tab) { return JSON.stringify(tab.form) !== tab.savedText; },
+  isDirty(tab) { return formText(tab.form) !== tab.savedText; },
 
   requestClose(tab) {
     if (this.isDirty(tab)) this.closing = tab;
@@ -168,15 +168,24 @@ Alpine.data('app', () => ({
       if (!isAbort(error)) notifyError(this.t('toast.openFailed'), error.message);
       return;
     }
-    for (const handle of picked) {
-      const file = await handle.getFile();
-      this.openText(file.name, await file.text(), handle);
-    }
+    for (const handle of picked) await this.openFile(handle.name, () => handle.getFile(), handle);
   },
 
   async openInput(e) {
-    for (const file of e.target.files) this.openText(file.name, await file.text(), null);
+    for (const file of e.target.files) await this.openFile(file.name, () => file, null);
     e.target.value = '';
+  },
+
+  // a file that cannot be read is told, and the other files are still opened
+  async openFile(name, getFile, handle) {
+    let text;
+    try {
+      text = await (await getFile()).text();
+    } catch (error) {
+      notifyError(this.t('toast.openFailed'), `${name}: ${messageOf(error)}`);
+      return;
+    }
+    this.openText(name, text, handle);
   },
 
   openSample(sample) {
@@ -185,20 +194,20 @@ Alpine.data('app', () => ({
   },
 
   // the input is checked when the user saves or runs, not while typing. The errors found are shown under their rows
-  // until they are fixed or the tab is checked again; errors made after the check wait for the next one.
+  // until the next save or run; deleting a row deletes its errors.
   checkTab(tab, failedKey) {
     const errors = validate(tab.form);
-    tab.reported = errors.map(errorKey);
-    // the toast goes away with the last of these errors, or with the tab
+    attachErrors(tab.form, errors);
+    // the toast goes away with the last of these errors (their rows deleted, or the next check), or with the tab
     if (errors.length) {
-      notifyError(this.t(failedKey), null, { closeWhen: () => !this.tabs.includes(tab) || !reportedErrors(tab.form, tab.reported).length });
+      notifyError(this.t(failedKey), null, { closeWhen: () => !this.tabs.includes(tab) || !hasErrors(tab.form) });
     }
     return errors;
   },
 
-
-  saved(tab) {
-    tab.savedText = JSON.stringify(tab.form);
+  // formText: the form as it was written, so that edits made while writing stay unsaved
+  saved(tab, text = formText(tab.form)) {
+    tab.savedText = text;
   },
 
   async save() {
@@ -211,9 +220,10 @@ Alpine.data('app', () => ({
     }
     const handle = handles.get(tab.id);
     if (!handle) return this.saveAs();
+    const text = formText(tab.form);
     try {
       if (!await writeFile(handle, toFileText(tab.form))) return notifyError(this.t('toast.saveFailed'), this.t('save.denied'));
-      this.saved(tab);
+      this.saved(tab, text);
     } catch (error) {
       notifyError(this.t('toast.saveFailed'), error.message);
     }
@@ -222,12 +232,16 @@ Alpine.data('app', () => ({
   async saveAs() {
     const tab = this.active;
     if (!tab || this.checkTab(tab, 'toast.saveInvalid').length) return;
+    const text = formText(tab.form);
+    const fileText = toFileText(tab.form);
     try {
       const handle = await window.showSaveFilePicker({ suggestedName: tab.name, types: FILE_TYPES });
-      if (!await writeFile(handle, toFileText(tab.form))) return notifyError(this.t('toast.saveFailed'), this.t('save.denied'));
+      if (!await writeFile(handle, fileText)) return notifyError(this.t('toast.saveFailed'), this.t('save.denied'));
+      // the tab may have been closed while the picker was open
+      if (!this.tabs.includes(tab)) return;
       handles.set(tab.id, handle);
       tab.name = handle.name;
-      this.saved(tab);
+      this.saved(tab, text);
     } catch (error) {
       if (!isAbort(error)) notifyError(this.t('toast.saveFailed'), error.message);
     }
@@ -236,7 +250,17 @@ Alpine.data('app', () => ({
   // --- model ---
 
   downloadModel,
-  deleteModel,
+  // null when the model is deleted; otherwise the message of the error, which the user is told
+  async deleteModel() {
+    try {
+      await deleteModel();
+      return null;
+    } catch (error) {
+      const message = messageOf(error);
+      notifyError(this.t('toast.deleteFailed'), message);
+      return message;
+    }
+  },
   canDownloadModel() { return canDownload(this.$store.model.status); },
   canDeleteModel() { return canDelete(this.$store.model.status); },
 
@@ -256,7 +280,7 @@ Alpine.data('app', () => ({
       return this.t(m.total ? 'model.downloadingTotal' : 'model.downloading', { loaded: mb(m.loaded), total: mb(m.total) });
     }
     if (m.status === 'inOtherTab') return this.t('model.inOtherTab');
-    return ['downloadFailed', 'loadFailed'].includes(m.status) ? this.t(`model.${m.status}`, { error: this.t(m.error) }) : '';
+    return ['downloadFailed', 'loadFailed'].includes(m.status) ? this.t(`model.${m.status}`, { error: m.error }) : '';
   },
 
   // --- language and mode, saved only when the user switches ---
@@ -271,14 +295,11 @@ Alpine.data('app', () => ({
 
   // --- editor ---
 
-  // the message under a row, or ''
-  error(tab, path) {
-    const e = reportedErrors(tab.form, tab.reported).find(e => e.path === path);
-    return e ? errorText(this.language, e) : '';
-  },
+  // the message of an error on a row (holder.errors[field]), or ''
+  error(e) { return e ? errorText(this.language, e) : ''; },
 
   // an error with where it is, for a toast
-  describeError(e) { return `${e.at}: ${errorText(this.language, e)}`; },
+  describeError(e) { return e.at ? `${e.at}: ${errorText(this.language, e)}` : errorText(this.language, e); },
 
   canAddCriterion,
 
@@ -303,7 +324,7 @@ Alpine.data('app', () => ({
   canRun(tab) { return tab.run?.status !== 'running'; },
 
   // whether the input changed after the last run; the result of the run stays shown
-  runChanged(tab) { return !!tab.run && tab.run.formText !== JSON.stringify(tab.form); },
+  runChanged(tab) { return !!tab.run && tab.run.formText !== formText(tab.form); },
 
   // the same checks as saving, so that what runs is what the editor shows.
   // Returns tab.run when it ends, { status: 'invalid', errors } when the input has errors (tab.run is kept),
@@ -312,22 +333,23 @@ Alpine.data('app', () => ({
     if (!this.canRun(tab)) return null;
     const errors = this.checkTab(tab, 'toast.runInvalid');
     if (errors.length) return { status: 'invalid', errors };
-    const formText = JSON.stringify(tab.form);
+    const text = formText(tab.form);
     const request = toRequest(tab.form);
-    tab.run = { status: 'running', formText };
+    tab.run = { status: 'running', formText: text };
     try {
       const current = engine();
       if (!current) {
         const status = this.$store.model.status;
+        if (status === 'lockFailed') throw new Error(this.t('model.lockFailed', { error: this.$store.model.error }));
         throw new Error(this.t(status === 'inOtherTab' ? 'model.inOtherTab' : status === 'loading' ? 'run.loading' : status === 'loadFailed' ? 'run.notLoaded' : 'run.notDownloaded'));
       }
       const started = performance.now();
       const response = await systemone(current, request);
       const ms = Math.round(performance.now() - started);
       console.log(JSON.stringify(response, null, 2));
-      tab.run = { status: 'done', response, ms, formText };
+      tab.run = { status: 'done', response, ms, formText: text };
     } catch (error) {
-      tab.run = { status: 'error', error: error.message ?? String(error), formText };
+      tab.run = { status: 'error', error: error.message ?? String(error), formText: text };
       notifyError(this.t('toast.runFailed'), tab.run.error);
     }
     return tab.run;

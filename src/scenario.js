@@ -124,7 +124,7 @@ export function toRequest(form) {
   const questions = {};
   for (const q of form.questions) {
     let criteria;
-    if (q.type === 'choice') criteria = Object.fromEntries(q.criteria.map(r => [r.key, r.description || null]));
+    if (q.type === 'choice') criteria = Object.fromEntries(q.criteria.map(r => [r.key, r.description]));
     else if (q.type === 'score') criteria = q.criteria;
     else {
       const entries = Object.entries(q.criteria).filter(([, d]) => d);
@@ -137,6 +137,9 @@ export function toRequest(form) {
 }
 
 const isBlank = text => !text.trim();
+
+// a key that JavaScript objects put first, in numeric order: an integer from 0 to 2^32 - 2 written without leading zeros
+const isIndexKey = key => /^(0|[1-9]\d*)$/.test(key) && Number(key) < 2 ** 32 - 1;
 
 // what of a form a request cannot hold or the model cannot run: nothing to ask or evaluate, empty or repeated keys,
 // an order that JSON objects would change (keys made of digits only are always put first, in numeric order),
@@ -155,7 +158,7 @@ export function validate(form) {
     });
     const unique = [...new Set(keys)];
     const order = Object.keys(Object.fromEntries(unique.map(k => [k, 0])));
-    const moved = keys.findIndex(key => /^(0|[1-9]\d*)$/.test(key) && order.indexOf(key) !== unique.indexOf(key));
+    const moved = keys.findIndex(key => isIndexKey(key) && order.indexOf(key) !== unique.indexOf(key));
     if (moved >= 0) problem(pathOf(moved), atOf(moved), 'err.numeric', { label, key: keys[moved] });
   };
 
@@ -184,12 +187,36 @@ export function validate(form) {
   return errors;
 }
 
-// an error across checks: the row it is under and what it is
-export const errorKey = e => `${e.path}|${e.code}`;
+// The errors found when the user saves or runs belong to the rows they are about, as `errors: { field: error }` on
+// the form (state, questions), a question (id, instructions, criteria), a choice option or a state item (key).
+// They stay until the next save or run, and go away with their row.
+function holderOf(form, path) {
+  const [first, i, part, j] = path.split('.');
+  if (first === 'state' || first === 'questions') return i === undefined ? [form, first] : [form.state[i], 'key'];
+  const q = form.questions[i];
+  if (part === undefined) return [q, 'id'];
+  if (part === 'c') return [q.criteria[j], 'key'];
+  return [q, part];
+}
 
-// the errors of a form that were reported (as errorKey) and are still there: a fixed error is gone at once,
-// an error made after the report waits for the next one
-export const reportedErrors = (form, reported) => validate(form).filter(e => reported.includes(errorKey(e)));
+// everything that can have errors: the form, its state items, its questions and their choice options
+const holdersOf = form => [form, ...(typeof form.state === 'string' ? [] : form.state), ...form.questions,
+  ...form.questions.flatMap(q => q.type === 'choice' ? q.criteria : [])];
+
+// puts the errors of validate() on their rows, in place of the errors from the last check
+export function attachErrors(form, errors) {
+  holdersOf(form).forEach(holder => { holder.errors = {}; });
+  for (const e of errors) {
+    const [holder, field] = holderOf(form, e.path);
+    holder.errors[field] = e;
+  }
+}
+
+// whether any row still has an error from the last check (a row that is deleted takes its errors with it)
+export const hasErrors = form => holdersOf(form).some(holder => holder.errors && Object.keys(holder.errors).length);
+
+// the input of a form, without the errors on its rows: to tell whether it changed
+export const formText = form => JSON.stringify(form, (key, value) => key === 'errors' ? undefined : value);
 
 // the text of a scenario file
 export const toFileText = form => JSON.stringify(toRequest(form), null, 2) + '\n';

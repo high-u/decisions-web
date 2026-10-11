@@ -29,7 +29,7 @@ Use named fields when the content has several parts (a message, a record, a poli
 To ask about one field, name it in \`instructions\` in backticks: "Does \`message\` request a refund?"`,
   choice: `\`choice\` picks one option from a set with no order.
 "criteria": {"billing": "payments, charges, refunds", "technical": "bugs, errors, login problems"}
-- Keys are the option names. Values are descriptions, or null when the key says enough.
+- Keys are the option names. Values are descriptions, or "" when the key says enough.
 - In this app (Julia-1), the model sees only the description when there is one, and the key otherwise. Write descriptions that stand on their own.
 - 2 to 20 options (the API allows up to 255).
 - Add an "other" or "none" option when the options may not cover every input.
@@ -49,7 +49,7 @@ To ask about one field, name it in \`instructions\` in backticks: "Does \`messag
   app: `Limits of this app, not of the API:
 - state: a non-empty string, or a flat object whose values are strings, at least one not empty. Nested objects and arrays are not accepted.
 - instructions: a non-empty string.
-- choice descriptions: strings or null. score levels and noul criteria: strings.
+- choice descriptions: strings (null is taken as ""). score levels and noul criteria: strings.
 - At least one question. choice: 2 to 20 options. score: 2 to 10 levels.
 - Question ids, option keys and state field names are not empty.
 - Keys made only of digits are moved to the front by JSON objects; a scenario whose order would change is not accepted.
@@ -74,6 +74,7 @@ const NOT_READY = {
   loading: 'The model is loading. Call get_app_state until it shows "ready".',
   loadFailed: 'The model could not be loaded. Call delete_model, then download_model.',
   inOtherTab: 'The model is in use in another tab of this app, so it cannot be used in this tab. Tell the user to close the other tab, then reload this page.',
+  lockFailed: 'This tab could not take the right to use the model (`model.error` in get_app_state says why), so it cannot be used in this tab. Tell the user.',
 };
 
 const SCENARIO = {
@@ -155,7 +156,7 @@ function tools(app) {
         const { status, loaded, total, error } = app.modelState;
         return {
           ok: true,
-          model: { status, loaded, total, error: error ? translate('en', error) : null },
+          model: { status, loaded, total, error: error || null },
           language: app.language,
           theme: app.dark ? 'dark' : 'light',
         };
@@ -283,7 +284,8 @@ function tools(app) {
       annotations: { consequentialHint: true },
       execute: async () => {
         if (!app.canDeleteModel()) return fail(`There is no model to delete: its status is "${app.modelState.status}".`);
-        await app.deleteModel();
+        const error = await app.deleteModel();
+        if (error) return fail(`The model could not be deleted: ${error}`);
         return { ok: true, status: app.modelState.status };
       },
     },

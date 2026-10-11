@@ -29,6 +29,7 @@ export const messages = {
     'model.loadFailed': 'モデルを読み込めませんでした（{error}）。モデルを削除してから、再度ダウンロードをお試しください。',
     'model.newVersion': '新しい版のモデルがあります。モデルを削除してからダウンロードすると、新しい版になります。',
     'model.inOtherTab': 'このアプリを開いている別のタブでモデルを使用中のため、このタブでは使えません。別のタブを閉じてから、このページを再読み込みしてください',
+    'model.lockFailed': 'モデルの使用権を取得できなかったため、このタブではモデルを使えません（{error}）',
 
     untitled: '無題 {n}',
     unsaved: '未保存',
@@ -40,6 +41,8 @@ export const messages = {
     'toast.downloadFailed': 'モデルをダウンロードできませんでした',
     'toast.loadFailed': 'モデルを読み込めませんでした',
     'toast.checkFailed': 'ダウンロード済みのモデルを確認できませんでした',
+    'toast.deleteFailed': 'モデルを削除できませんでした',
+    'toast.lockFailed': 'モデルの使用権を取得できませんでした',
     'toast.versionCheckFailed': '新しい版のモデルがあるか確認できませんでした',
     'toast.languageReadFailed': '保存した言語を読み込めませんでした',
     'toast.languageSaveFailed': '言語を保存できませんでした',
@@ -148,6 +151,7 @@ export const messages = {
     'model.loadFailed': 'Could not load the model ({error}). Delete the model, then try downloading it again.',
     'model.newVersion': 'A newer version of the model is available. Delete the model, then download it to get the newer version.',
     'model.inOtherTab': 'The model is in use in another tab of this app, so it cannot be used in this tab. Close the other tab, then reload this page',
+    'model.lockFailed': 'The right to use the model could not be taken, so it cannot be used in this tab ({error})',
 
     untitled: 'Untitled {n}',
     unsaved: 'Unsaved',
@@ -159,6 +163,8 @@ export const messages = {
     'toast.downloadFailed': 'Could not download the model',
     'toast.loadFailed': 'Could not load the model',
     'toast.checkFailed': 'Could not check the downloaded model',
+    'toast.deleteFailed': 'Could not delete the model',
+    'toast.lockFailed': 'Could not take the right to use the model',
     'toast.versionCheckFailed': 'Could not check for a newer model',
     'toast.languageReadFailed': 'Could not read the saved language',
     'toast.languageSaveFailed': 'Could not save the language',
