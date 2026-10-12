@@ -1,6 +1,5 @@
 // TypeSafe System One (Jev) compatible layer over JuliaCPU.
 // Mirrors llama.cpp tools/server/server-decision.cpp for Julia-1 (decision type LAYA, temperature 1).
-// See docs/jev-compat.md.
 
 const TYPES = ['choice', 'score', 'noul'];
 
