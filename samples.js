@@ -7,17 +7,17 @@ export const SAMPLES = {
       request: {
         state: 'お客様からのメッセージ: 先週の注文で二重に請求されたのに、誰からも返信がありません。',
         questions: {
-          route: {
+          振り分け: {
             type: 'choice',
             instructions: 'どのチームが対応すべきですか？',
             criteria: {
-              billing: '支払い、請求、返金、請求書',
-              shipping: '配送、追跡、紛失や遅延した荷物',
-              technical: '不具合、エラー、ログインの問題',
+              請求: '支払い、請求、返金、請求書',
+              配送: '配送、追跡、紛失や遅延した荷物',
+              技術: '不具合、エラー、ログインの問題',
             },
           },
-          angry: { type: 'noul', instructions: 'お客様は怒っていますか？' },
-          urgency: {
+          怒り: { type: 'noul', instructions: 'お客様は怒っていますか？', criteria: { true: '怒っている', false: '怒っていない' } },
+          緊急度: {
             type: 'score',
             instructions: 'どのくらい急ぎですか？',
             criteria: ['待てる', '今週中', '今日中', '今すぐ'],
@@ -34,18 +34,18 @@ export const SAMPLES = {
           review: '届いたイヤホン、音質はとても良いのですが、片方が3日で聞こえなくなりました。交換をお願いしたいです。',
         },
         questions: {
-          topic: {
+          話題: {
             type: 'choice',
             instructions: 'このレビューの主な話題は何ですか？',
             criteria: {
-              sound: '音質の良し悪し',
-              defect: '故障、不具合、動かない',
-              delivery: '配送、梱包、届くまでの日数',
-              price: '価格、値段、割引',
+              音質: '音質の良し悪し',
+              不具合: '故障、不具合、動かない',
+              配送: '配送、梱包、届くまでの日数',
+              価格: '価格、値段、割引',
             },
           },
-          wants_exchange: { type: 'noul', instructions: '交換または返品を求めていますか？' },
-          satisfaction: {
+          交換希望: { type: 'noul', instructions: '交換または返品を求めていますか？', criteria: { true: '求めている', false: '求めていない' } },
+          満足度: {
             type: 'score',
             instructions: '購入者の満足度はどのくらいですか？',
             criteria: ['とても不満', 'やや不満', 'どちらでもない', 'やや満足', 'とても満足'],
@@ -62,16 +62,16 @@ export const SAMPLES = {
           body: '今月分の経費精算が未提出です。本日17時までに提出してください。',
         },
         questions: {
-          priority: {
+          優先度: {
             type: 'score',
             instructions: 'このメールにどのくらい急いで対応すべきですか？',
             criteria: ['後で読めばよい', '今週中に対応', '今日中に対応', 'すぐに対応'],
           },
-          needs_reply: { type: 'noul', instructions: '返信や提出などの対応が必要ですか？' },
-          category: {
+          要対応: { type: 'noul', instructions: '返信や提出などの対応が必要ですか？', criteria: { true: '対応が必要', false: '対応は不要' } },
+          分類: {
             type: 'choice',
             instructions: 'メールの分類はどれですか？',
-            criteria: { expense: '経費・精算', meeting: '会議・予定', customer: '顧客対応', other: 'その他' },
+            criteria: { 経費: '経費・精算', 会議: '会議・予定', 顧客対応: '顧客対応', その他: 'その他' },
           },
         },
       },
@@ -92,7 +92,7 @@ export const SAMPLES = {
               technical: 'bugs, errors, login problems',
             },
           },
-          angry: { type: 'noul', instructions: 'Is the customer angry?' },
+          angry: { type: 'noul', instructions: 'Is the customer angry?', criteria: { true: 'angry', false: 'not angry' } },
           urgency: {
             type: 'score',
             instructions: 'How urgent is this?',
@@ -120,7 +120,7 @@ export const SAMPLES = {
               price: 'price, cost, discounts',
             },
           },
-          wants_exchange: { type: 'noul', instructions: 'Does the customer ask for an exchange or a return?' },
+          wants_exchange: { type: 'noul', instructions: 'Does the customer ask for an exchange or a return?', criteria: { true: 'asks for one', false: 'does not' } },
           satisfaction: {
             type: 'score',
             instructions: 'How satisfied is the buyer?',
@@ -143,7 +143,7 @@ export const SAMPLES = {
             instructions: 'How quickly should this email be handled?',
             criteria: ['read later', 'handle this week', 'handle today', 'handle right now'],
           },
-          needs_reply: { type: 'noul', instructions: 'Does it need a reply or an action such as a submission?' },
+          needs_reply: { type: 'noul', instructions: 'Does it need a reply or an action such as a submission?', criteria: { true: 'needed', false: 'not needed' } },
           category: {
             type: 'choice',
             instructions: 'Which category is this email?',
